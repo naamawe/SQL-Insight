@@ -1,0 +1,24 @@
+.idea/
+*.iml
+target/
+# --- Maven ---
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.nextSnapshot
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Log ---
+logs/
+*.log
+
+# --- Temp ---
+temp/
+tmp/
