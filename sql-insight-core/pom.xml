@@ -17,5 +17,9 @@
             <groupId>com.xhx</groupId>
             <artifactId>sql-insight-ai</artifactId>
         </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+        </dependency>
     </dependencies>
 </project>
