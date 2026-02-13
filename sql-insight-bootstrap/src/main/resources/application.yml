@@ -36,3 +36,10 @@ langchain4j:
 jwt:
   secret: 74HH0nnPS4qr9HJUOkhT0D1v5Y1By3rCymqR4Zw/akw=
   expiration: 86400000
+defaultPassword: default123
+mybatis-plus:
+  global-config:
+    db-config:
+      logic-delete-field: isDeleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0

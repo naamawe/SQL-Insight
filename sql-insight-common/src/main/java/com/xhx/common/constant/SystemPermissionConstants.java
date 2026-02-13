@@ -2,6 +2,7 @@ package com.xhx.common.constant;
 
 /**
  * 系统功能权限常量
+ * @author master
  */
 public class SystemPermissionConstants {
 

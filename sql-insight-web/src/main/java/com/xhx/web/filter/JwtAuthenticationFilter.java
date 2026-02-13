@@ -26,6 +26,9 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+/**
+ * @author master
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -74,7 +77,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             // 自动续期
             Long expire = redisTemplate.getExpire(redisTokenKey, TimeUnit.MINUTES);
-            if (expire < SecurityConstants.TOKEN_RENEW_THRESHOLD) {
+            if (expire!= null && expire < SecurityConstants.TOKEN_RENEW_THRESHOLD) {
                 redisTemplate.expire(redisTokenKey, SecurityConstants.TOKEN_EXPIRE_MINUTES, TimeUnit.MINUTES);
                 redisTemplate.expire(redisPermKey, SecurityConstants.TOKEN_EXPIRE_MINUTES, TimeUnit.MINUTES);
                 log.info("自动续期：用户 {} 的会话已触发延时", username);

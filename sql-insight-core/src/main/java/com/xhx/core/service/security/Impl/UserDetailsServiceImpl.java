@@ -21,6 +21,7 @@ import java.util.List;
 
 /**
  * 身份认证数据加载
+ * @author master
  */
 @Slf4j
 @Service
@@ -33,7 +34,9 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUserName, username));
-        if (user == null) throw new UsernameNotFoundException("用户名或密码错误");
+        if (user == null) {
+            throw new UsernameNotFoundException("用户名或密码错误");
+        }
 
         if (user.getStatus() != null && user.getStatus() == 0) {
             throw new UsernameNotFoundException("该账号已被禁用");

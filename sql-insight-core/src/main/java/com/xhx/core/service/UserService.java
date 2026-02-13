@@ -1,10 +1,14 @@
 package com.xhx.core.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.xhx.core.model.dto.UserPasswordUpdateDTO;
 import com.xhx.core.model.dto.UserSaveDTO;
 import com.xhx.core.model.dto.UserUpdateDTO;
 import com.xhx.core.model.vo.UserVO;
 
+/**
+ * @author master
+ */
 public interface UserService {
     /**
      * 获取用户分页
@@ -39,4 +43,17 @@ public interface UserService {
      * @param userId 用户 id
      */
     void deleteUser(Long userId);
+
+    /**
+     * 修改密码
+     * @param userId 用户 id
+     * @param passwordDto 密码信息
+     */
+    void updateMyPassword(Long userId, UserPasswordUpdateDTO passwordDto);
+
+    /**
+     * 重置密码
+     * @param userId 用户 id
+     */
+    void resetPassword(Long userId);
 }

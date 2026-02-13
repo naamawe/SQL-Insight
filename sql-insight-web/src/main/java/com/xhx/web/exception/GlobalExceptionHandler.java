@@ -1,5 +1,6 @@
 package com.xhx.web.exception;
 
+import com.xhx.common.exception.BaseException;
 import com.xhx.common.result.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
@@ -8,9 +9,21 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import javax.security.sasl.AuthenticationException;
 
+/**
+ * @author master
+ */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    /**
+     * 核心：捕获所有继承自 BaseException 的自定义异常
+     */
+    @ExceptionHandler(BaseException.class)
+    public Result<String> handleBaseException(BaseException e) {
+        log.warn("业务逻辑异常 [{}]: {}", e.getClass().getSimpleName(), e.getMessage());
+        return Result.error(e.getCode(), e.getMessage());
+    }
 
     // Spring Security 认证异常 (401)
     @ExceptionHandler(AuthenticationException.class)

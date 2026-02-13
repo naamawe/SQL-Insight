@@ -23,6 +23,14 @@ public class Result<T> implements Serializable {
     /**
      * 成功返回
      */
+    public static <T> Result<T> success() {
+        return Result.<T>builder()
+                .code(200)
+                .message("操作成功")
+                .data(null)
+                .build();
+    }
+
     public static <T> Result<T> success(T data) {
         return Result.<T>builder()
                 .code(200)

@@ -1,9 +1,6 @@
 package com.xhx.web.config;
 
 import com.xhx.web.filter.JwtAuthenticationFilter;
-import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,13 +20,22 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
 
 import java.util.Collections;
 
+/**
+ * @author master
+ */
 @Configuration
 @EnableWebSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final HandlerExceptionResolver resolver;
+
+    public SecurityConfig(
+            JwtAuthenticationFilter jwtAuthenticationFilter,
+            @Qualifier("handlerExceptionResolver") HandlerExceptionResolver resolver) {
+        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.resolver = resolver;
+    }
 
 
     @Bean

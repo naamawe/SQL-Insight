@@ -1,5 +1,6 @@
 package com.xhx.dal.entity;
 
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
@@ -11,4 +12,7 @@ import lombok.Data;
 public class UserDataSource {
     private Long userId;
     private Long dataSourceId;
+    @TableLogic
+    private Integer isDeleted;
+
 }

@@ -1,8 +1,6 @@
 package com.xhx.dal.entity;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -24,6 +22,9 @@ public class DataSource {
     private String password;
     private String databaseName;
     private LocalDateTime gmtCreated;
+    private LocalDateTime gmtModified;
+    @TableLogic
+    private Integer isDeleted;
 
     public String toJdbcUrl() {
         return String.format(
