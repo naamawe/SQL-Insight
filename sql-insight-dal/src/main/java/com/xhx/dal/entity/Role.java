@@ -1,9 +1,9 @@
 package com.xhx.dal.entity;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
+
+import java.time.LocalDateTime;
 
 /**
  * @author master
@@ -16,4 +16,8 @@ public class Role {
     private String roleName;
     private String description;
     private String systemPermission;
+    @TableLogic
+    private Integer isDeleted;
+    private LocalDateTime gmtCreated;
+    private LocalDateTime gmtModified;
 }

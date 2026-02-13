@@ -14,6 +14,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+/**
+ * @author master
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -69,7 +72,9 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
         String policyKey = SecurityConstants.USER_POLICY_KEY + userId;
         String policyJson = redisTemplate.opsForValue().get(policyKey);
         
-        if (policyJson == null) return;
+        if (policyJson == null) {
+            return;
+        }
         QueryPolicy policy = JSON.parseObject(policyJson, QueryPolicy.class);
 
         String upperSql = sql.toUpperCase();

@@ -45,11 +45,15 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
                         .eq(ChatSession::getId, sessionId)
                         .eq(ChatSession::getUserId, userId)
         );
-        if (session == null) throw new RuntimeException("会话不存在或无权访问");
+        if (session == null) {
+            throw new RuntimeException("会话不存在或无权访问");
+        }
 
         Long dataSourceId = session.getDataSourceId();
         DataSource dsConfig = dataSourceMapper.selectById(dataSourceId);
-        if (dsConfig == null) throw new RuntimeException("数据源配置已失效");
+        if (dsConfig == null) {
+            throw new RuntimeException("数据源配置已失效");
+        }
 
         String permKey = SecurityConstants.USER_PERMISSION_KEY + userId;
         Set<String> allPerms = redisTemplate.opsForSet().members(permKey);

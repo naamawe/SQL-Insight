@@ -12,6 +12,9 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * @author master
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -23,7 +26,9 @@ public class SqlExecutorServiceImpl implements SqlExecutorService {
     @Override
     public List<Map<String, Object>> execute(Long dataSourceId, String sql) {
         DataSource config = dataSourceMapper.selectById(dataSourceId);
-        if (config == null) throw new RuntimeException("数据源不存在");
+        if (config == null) {
+            throw new RuntimeException("数据源不存在");
+        }
 
         // 获取动态数据源
         javax.sql.DataSource ds = dataSourceManager.getDataSource(config);
