@@ -33,3 +33,6 @@ langchain4j:
       temperature: 0.0
       log-requests: true
       log-responses: true
+jwt:
+  secret: 74HH0nnPS4qr9HJUOkhT0D1v5Y1By3rCymqR4Zw/akw=
+  expiration: 86400000

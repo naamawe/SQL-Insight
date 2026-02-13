@@ -31,12 +31,27 @@ public class Result<T> implements Serializable {
                 .build();
     }
 
+    public static <T> Result<T> success(String message, T data) {
+        return Result.<T>builder()
+                .code(200)
+                .message(message)
+                .data(data)
+                .build();
+    }
+
     /**
      * 失败返回
      */
     public static <T> Result<T> error(String message) {
         return Result.<T>builder()
                 .code(500)
+                .message(message)
+                .build();
+    }
+
+    public static <T> Result<T> error(Integer code, String message) {
+        return Result.<T>builder()
+                .code(code)
                 .message(message)
                 .build();
     }
