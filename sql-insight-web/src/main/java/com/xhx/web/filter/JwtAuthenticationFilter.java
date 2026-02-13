@@ -21,6 +21,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -51,47 +52,63 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             Long userId = claims.get("userId", Long.class);
             String username = claims.getSubject();
 
-            // Redis 校验
-            String redisKey = SecurityConstants.REDIS_TOKEN_KEY + userId;
-            String cachedToken = redisTemplate.opsForValue().get(redisKey);
+            // 校验 Token 在 Redis 中是否存在
+            String redisTokenKey = SecurityConstants.REDIS_TOKEN_KEY + userId;
+            String cachedToken = redisTemplate.opsForValue().get(redisTokenKey);
 
-            if (!StringUtils.hasText(cachedToken)) {
-                log.warn("拦截请求：用户 {} 的 Token 在 Redis 中已过期或不存在", username);
-                filterChain.doFilter(request, response);
+            if (!StringUtils.hasText(cachedToken) || !cachedToken.equals(token)) {
+                log.warn("拦截请求：用户 {} 的 Token 已失效", username);
+                renderError(response, "登录已失效，请重新登录");
                 return;
             }
 
-            if (!cachedToken.equals(token)) {
-                log.warn("拦截请求：用户 {} 的 Token 与 Redis 不匹配（可能在别处登录，已被踢下线）", username);
-                filterChain.doFilter(request, response);
+            // 从 Redis 获取最新实时权限
+            String redisPermKey = SecurityConstants.USER_SYS_PERM_KEY + userId;
+            String latestPerm = redisTemplate.opsForValue().get(redisPermKey);
+
+            if (!StringUtils.hasText(latestPerm)) {
+                log.warn("拦截请求：用户 {} 的实时权限缺失", username);
+                renderError(response, "权限已变更，请重新登录");
                 return;
             }
 
-            // 3. 自动续期
-            Long expire = redisTemplate.getExpire(redisKey, TimeUnit.MINUTES);
+            // 自动续期
+            Long expire = redisTemplate.getExpire(redisTokenKey, TimeUnit.MINUTES);
             if (expire < SecurityConstants.TOKEN_RENEW_THRESHOLD) {
-                redisTemplate.expire(redisKey, SecurityConstants.TOKEN_EXPIRE_MINUTES, TimeUnit.MINUTES);
-                log.info("自动续期：用户 {} 的 Token 剩余 {} 分钟，已触发续期", username, expire);
+                redisTemplate.expire(redisTokenKey, SecurityConstants.TOKEN_EXPIRE_MINUTES, TimeUnit.MINUTES);
+                redisTemplate.expire(redisPermKey, SecurityConstants.TOKEN_EXPIRE_MINUTES, TimeUnit.MINUTES);
+                log.info("自动续期：用户 {} 的会话已触发延时", username);
             }
 
             // 填充上下文
             if (SecurityContextHolder.getContext().getAuthentication() == null) {
-                @SuppressWarnings("unchecked")
-                List<String> roles = (List<String>) claims.get("roles", List.class);
-                setupSecurityContext(request, userId, username, roles);
-                log.debug("身份验证成功：用户 {}，角色 {}", username, roles);
+                List<String> finalRoles = Collections.singletonList(latestPerm);
+                setupSecurityContext(request, userId, username, finalRoles);
+                log.debug("身份验证成功：用户 {}，实时权限 {}", username, latestPerm);
             }
 
-        } catch (Exception e) {
-            log.error("Token 校验异常 [{}]: {}", request.getRequestURI(), e.getMessage());
-        }
-
-        try {
             filterChain.doFilter(request, response);
+
+        } catch (Exception e) {
+            log.error("JWT 校验异常: {}", e.getMessage());
+            renderError(response, "无效的令牌");
         } finally {
             UserContext.clear();
         }
     }
+
+    /**
+     * 手动向前端渲染 JSON 错误响应
+     */
+    private void renderError(HttpServletResponse response, String msg) throws IOException {
+        response.setContentType("application/json;charset=UTF-8");
+        response.setStatus(HttpServletResponse.SC_OK);
+
+        String json = String.format("{\"code\": %d, \"msg\": \"%s\", \"data\": null}", 401, msg);
+
+        response.getWriter().write(json);
+    }
+
 
     private void setupSecurityContext(HttpServletRequest request, Long userId, String username, List<String> roles) {
         List<SimpleGrantedAuthority> authorities = roles.stream()

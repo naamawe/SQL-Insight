@@ -1,6 +1,7 @@
 package com.xhx.core.service.security.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.xhx.common.constant.SystemPermissionConstants;
 import com.xhx.core.model.LoginUser;
 import com.xhx.dal.entity.Role;
 import com.xhx.dal.entity.User;
@@ -13,8 +14,9 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -30,35 +32,32 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // 查询用户信息
-        User user = userMapper.selectOne(new LambdaQueryWrapper<User>()
-                .eq(User::getUserName, username));
+        User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUserName, username));
+        if (user == null) throw new UsernameNotFoundException("用户名或密码错误");
 
-        if (user == null) {
-            log.warn("登录失败：用户名 {} 不存在", username);
-            throw new UsernameNotFoundException("用户名或密码错误");
-        }
-
-        // 检查状态
         if (user.getStatus() != null && user.getStatus() == 0) {
-            log.warn("登录失败：用户 {} 已被禁用", username);
             throw new UsernameNotFoundException("该账号已被禁用");
         }
 
-        // 获取角色信息
         Role role = roleMapper.selectById(user.getRoleId());
-        String roleName = (role != null) ? role.getRoleName().toUpperCase() : "USER";
 
-        // 4. 构建权限集合
-        List<SimpleGrantedAuthority> authorities = Collections.singletonList(
-                new SimpleGrantedAuthority("ROLE_" + roleName)
-        );
+        // 确定系统权限标识
+        String sysPerm;
+        if (role != null && StringUtils.hasText(role.getSystemPermission())) {
+            sysPerm = role.getSystemPermission().toUpperCase();
+        } else {
+            sysPerm = SystemPermissionConstants.USER;
+        }
 
-        log.info("用户 {} 身份核实成功，准备进行密码比对", username);
+        // 构建 Authority 集合
+        List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+        authorities.add(new SimpleGrantedAuthority(sysPerm));
 
-        // 返回 LoginUser 对象
+        log.info("用户 {} 登录，系统权限标记: {}", username, sysPerm);
+
         return new LoginUser(
                 user.getId(),
+                user.getRoleId(),
                 user.getUserName(),
                 user.getPassword(),
                 authorities

@@ -10,7 +10,6 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
-import java.util.List;
 
 /**
  * @author master
@@ -40,13 +39,11 @@ public class JwtUtil {
      * 生成 Token
      * @param userId   用户ID (存入自定义 claim)
      * @param username 用户名 (存入 subject)
-     * @param roles    角色列表 (存入自定义 claim)
      */
-    public String createToken(Long userId, String username, List<String> roles) {
+    public String createToken(Long userId, String username) {
         return Jwts.builder()
                 .subject(username)
                 .claim("userId", userId)
-                .claim("roles", roles)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expiration))
                 .signWith(signingKey)

@@ -21,14 +21,12 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -54,18 +52,22 @@ public class AuthServiceImpl implements AuthService {
 
         // 认证成功，获取 LoginUser
         LoginUser loginUser = (LoginUser) auth.getPrincipal();
-        Long userId = loginUser.getUserId();
 
-        // 将详细权限抓取并缓存到 Redis
-        User user = userMapper.selectById(userId);
-        refreshUserPermissionsCache(userId, user.getRoleId());
+        Long userId = loginUser.getUserId();
+        Long roleId = loginUser.getRoleId();
+
+        String systemPerm = loginUser.getAuthorities().iterator().next().getAuthority();
+
+        redisTemplate.opsForValue().set(
+                SecurityConstants.USER_SYS_PERM_KEY + userId,
+                systemPerm,
+                24, TimeUnit.HOURS
+        );
+
+        refreshUserPermissionsCache(userId, roleId);
 
         // 签发轻量级 JWT
-        List<String> roles = loginUser.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toList());
-
-        String token = jwtUtil.createToken(userId, loginUser.getUsername(), roles);
+        String token = jwtUtil.createToken(userId, loginUser.getUsername());
 
         redisTemplate.opsForValue().set("login:token:" + userId, token, 24, TimeUnit.HOURS);
 

@@ -14,5 +14,6 @@ public class Role {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String roleName;
+    private String systemPermission;
     private String description;
 }

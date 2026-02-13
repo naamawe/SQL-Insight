@@ -24,4 +24,8 @@ public class SecurityConstants {
 
     /** 存放用户查询策略的 Redis Key (Value类型: JSON字符串) */
     public static final String USER_POLICY_KEY = "user:policy:";
+
+    /** 存放用户系统权限的 Redis Key (Set类型: permission) */
+    public static final String USER_SYS_PERM_KEY = "user:sys_perm:";
+
 }

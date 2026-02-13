@@ -10,9 +10,12 @@ import java.util.Collection;
 public class LoginUser extends User {
 
     private final Long userId;
+    private final Long roleId;
 
-    public LoginUser(Long userId, String username, String password, Collection<? extends GrantedAuthority> authorities) {
+    public LoginUser(Long userId, Long roleId, String username, String password, Collection<? extends GrantedAuthority> authorities) {
         super(username, password, authorities);
         this.userId = userId;
+        this.roleId = roleId;
     }
 }
+
