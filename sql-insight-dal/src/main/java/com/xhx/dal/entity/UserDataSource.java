@@ -12,7 +12,4 @@ import lombok.Data;
 public class UserDataSource {
     private Long userId;
     private Long dataSourceId;
-    @TableLogic
-    private Integer isDeleted;
-
 }

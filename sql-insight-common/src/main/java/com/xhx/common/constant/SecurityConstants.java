@@ -2,6 +2,7 @@ package com.xhx.common.constant;
 
 /**
  * 安全相关常量
+ * @author master
  */
 public class SecurityConstants {
     /** Token 前缀 */
@@ -28,4 +29,6 @@ public class SecurityConstants {
     /** 存放用户系统权限的 Redis Key (Set类型: permission) */
     public static final String USER_SYS_PERM_KEY = "user:sys_perm:";
 
+    /** 存放用户已授权数据源 ID 的 Redis Key (List/Set类型) */
+    public static final String USER_DATASOURCES_KEY = "user:datasources:";
 }

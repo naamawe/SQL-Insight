@@ -7,6 +7,7 @@ import com.xhx.common.constant.SecurityConstants;
 import com.xhx.common.context.UserContext;
 import com.xhx.core.model.LoginUser;
 import com.xhx.core.model.dto.LoginDTO;
+import com.xhx.core.service.RolePermissionService;
 import com.xhx.core.service.auth.AuthService;
 import com.xhx.core.util.JwtUtil;
 import com.xhx.dal.entity.QueryPolicy;
@@ -28,18 +29,20 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * @author master
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
     private final UserMapper userMapper;
-    private final TablePermissionMapper tablePermissionMapper;
-    private final QueryPolicyMapper queryPolicyMapper;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtUtil jwtUtil;
     private final StringRedisTemplate redisTemplate;
+    private final RolePermissionService rolePermissionService;
 
     @Override
     public String login(LoginDTO loginDto) {
@@ -64,7 +67,7 @@ public class AuthServiceImpl implements AuthService {
                 24, TimeUnit.HOURS
         );
 
-        refreshUserPermissionsCache(userId, roleId);
+        rolePermissionService.refreshUserPermissionsCache(userId, roleId);
 
         // 签发轻量级 JWT
         String token = jwtUtil.createToken(userId, loginUser.getUsername());
@@ -73,36 +76,6 @@ public class AuthServiceImpl implements AuthService {
 
         log.info("==> 用户 {} 登录成功，权限快照已存入 Redis", loginUser.getUsername());
         return token;
-    }
-
-    /**
-     * 抓取权限并存入 Redis
-     */
-    private void refreshUserPermissionsCache(Long userId, Long roleId) {
-        // 加载表权限
-        List<TablePermission> perms = tablePermissionMapper.selectList(
-                new LambdaQueryWrapper<TablePermission>().eq(TablePermission::getRoleId, roleId));
-
-        String permKey = SecurityConstants.USER_PERMISSION_KEY + userId;
-        redisTemplate.delete(permKey);
-
-        if (!perms.isEmpty()) {
-            List<String> permStrings = perms.stream()
-                    .map(p -> p.getDataSourceId() + ":" + p.getTableName() + ":" + p.getPermission())
-                    .toList();
-            redisTemplate.opsForSet().add(permKey, permStrings.toArray(new String[0]));
-            redisTemplate.expire(permKey, 24, TimeUnit.HOURS);
-        }
-
-        // 加载查询策略
-        QueryPolicy policy = queryPolicyMapper.selectOne(
-                new LambdaQueryWrapper<QueryPolicy>().eq(QueryPolicy::getRoleId, roleId));
-
-        if (policy != null) {
-            String policyKey = SecurityConstants.USER_POLICY_KEY + userId;
-            // 将策略对象转为 JSON 存入，方便后续执行 SQL 前校验
-            redisTemplate.opsForValue().set(policyKey, JSON.toJSONString(policy), 24, TimeUnit.HOURS);
-        }
     }
 
     @Override
@@ -128,6 +101,8 @@ public class AuthServiceImpl implements AuthService {
         newUser.setUserName(username);
         newUser.setPassword(encodedPassword);
         newUser.setStatus((short) 1);
+        // 新注册默认用户
+        newUser.setRoleId(2L);
 
         userMapper.insert(newUser);
 

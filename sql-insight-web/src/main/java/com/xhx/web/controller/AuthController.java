@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 
 /**
  * 认证授权控制器
+ * @author master
  */
 @Slf4j
 @RestController

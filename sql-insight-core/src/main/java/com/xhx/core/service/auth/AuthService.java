@@ -4,6 +4,7 @@ import com.xhx.core.model.dto.LoginDTO;
 
 /**
  * 认证服务接口
+ * @author master
  */
 public interface AuthService {
     /**
