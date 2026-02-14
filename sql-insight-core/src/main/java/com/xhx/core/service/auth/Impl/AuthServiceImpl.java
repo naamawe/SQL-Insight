@@ -2,6 +2,7 @@ package com.xhx.core.service.auth.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.xhx.common.constant.SecurityConstants;
+import com.xhx.common.constant.SystemPermissionConstants;
 import com.xhx.common.context.UserContext;
 import com.xhx.core.model.LoginUser;
 import com.xhx.core.model.dto.LoginDTO;
@@ -41,12 +42,10 @@ public class AuthServiceImpl implements AuthService {
     public String login(LoginDTO loginDto) {
         log.info("==> 用户 {} 尝试登录", loginDto.getUsername());
 
-        // Spring Security 认证
         Authentication auth = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(loginDto.getUsername(), loginDto.getPassword())
         );
 
-        // 认证成功，获取 LoginUser
         LoginUser loginUser = (LoginUser) auth.getPrincipal();
 
         Long userId = loginUser.getUserId();
@@ -62,7 +61,6 @@ public class AuthServiceImpl implements AuthService {
 
         rolePermissionService.refreshUserPermissionsCache(userId, roleId);
 
-        // 签发轻量级 JWT
         String token = jwtUtil.createToken(userId, loginUser.getUsername());
 
         redisTemplate.opsForValue().set("login:token:" + userId, token, 24, TimeUnit.HOURS);
@@ -79,32 +77,30 @@ public class AuthServiceImpl implements AuthService {
 
         log.info("==> 尝试注册新用户: {}", username);
 
-        // 校验用户名是否已存在
-        User existUser = userMapper.selectOne(new QueryWrapper<User>().eq("user_name", username));
+        User existUser = userMapper.selectOne(
+                new QueryWrapper<User>().eq("user_name", username)
+        );
         if (existUser != null) {
             log.warn("==> 注册失败：用户名 {} 已存在", username);
             throw new RuntimeException("该用户名已被占用");
         }
 
-        // 加密密码
         String encodedPassword = passwordEncoder.encode(password);
 
-        // 构建用户对象并保存
         User newUser = new User();
         newUser.setUserName(username);
         newUser.setPassword(encodedPassword);
-        newUser.setStatus((short) 1);
-        // 新注册默认用户
+        newUser.setSystemPermission(SystemPermissionConstants.USER);
         newUser.setRoleId(2L);
+        newUser.setStatus((short) 1);
 
         userMapper.insert(newUser);
 
-        log.info("==> 用户 {} 注册成功，ID 为: {}", username, newUser.getId());
+        log.info("==> 用户 {} 注册成功，ID: {}", username, newUser.getId());
     }
 
     @Override
     public void logout() {
-        // 退出登录日志
         log.info("==> 用户 {} 请求退出登录", UserContext.getUserId());
         String redisKey = SecurityConstants.REDIS_TOKEN_KEY + UserContext.getUserId();
         redisTemplate.delete(redisKey);

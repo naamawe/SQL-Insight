@@ -3,6 +3,8 @@ package com.xhx.core.service.management.Impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xhx.common.constant.SecurityConstants;
+import com.xhx.common.constant.SystemPermissionConstants;
+import com.xhx.common.context.UserContext;
 import com.xhx.core.model.dto.UserPasswordUpdateDTO;
 import com.xhx.core.model.dto.UserSaveDTO;
 import com.xhx.core.model.dto.UserUpdateDTO;
@@ -119,6 +121,11 @@ public class UserServiceImpl implements UserService {
         User user = new User();
         BeanUtils.copyProperties(saveDto, user);
         user.setPassword(passwordEncoder.encode(saveDto.getPassword()));
+
+        if (!StringUtils.hasText(user.getSystemPermission())) {
+            user.setSystemPermission(SystemPermissionConstants.USER);
+        }
+
         user.setStatus((short) 1);
         userMapper.insert(user);
     }
@@ -134,14 +141,14 @@ public class UserServiceImpl implements UserService {
             throw new RuntimeException("用户不存在");
         }
 
-        // 禁止禁用超级管理员
         if ("admin".equals(oldUser.getUserName()) && updateDto.getStatus() == 0) {
             throw new RuntimeException("系统核心管理员不可禁用");
         }
 
-        // 如果修改了角色或状态，执行踢出逻辑（确保权限实时生效）
         boolean needKickOut = !oldUser.getRoleId().equals(updateDto.getRoleId())
-                || !oldUser.getStatus().equals(updateDto.getStatus());
+                || !oldUser.getStatus().equals(updateDto.getStatus())
+                || (updateDto.getSystemPermission() != null
+                && !oldUser.getSystemPermission().equals(updateDto.getSystemPermission()));
 
         BeanUtils.copyProperties(updateDto, oldUser);
         userMapper.updateById(oldUser);
@@ -162,8 +169,16 @@ public class UserServiceImpl implements UserService {
             return;
         }
 
-        if ("admin".equals(user.getUserName())) {
-            throw new RuntimeException("不能删除系统初始化管理员");
+        if (SystemPermissionConstants.SUPER_ADMIN.equals(user.getSystemPermission())) {
+            Long superAdminCount = userMapper.selectCount(
+                    new LambdaQueryWrapper<User>()
+                            .eq(User::getSystemPermission, SystemPermissionConstants.SUPER_ADMIN)
+                            .eq(User::getStatus, 1)
+            );
+
+            if (superAdminCount <= 1) {
+                throw new RuntimeException("系统安全限制：不能删除唯一的超级管理员");
+            }
         }
 
         // 踢出登录状态
@@ -230,6 +245,58 @@ public class UserServiceImpl implements UserService {
 
         // 密码修改后强制下线，防止盗号者继续持有旧Token操作
         kickOutUser(userId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateSystemPermission(Long userId, String systemPermission) {
+        Long currentUserId = UserContext.getUserId();
+        if (userId.equals(currentUserId)) {
+            throw new RuntimeException("不能修改自己的系统权限");
+        }
+
+        User targetUser = userMapper.selectById(userId);
+        if (targetUser == null) {
+            throw new RuntimeException("用户不存在");
+        }
+
+        // 校验权限值合法性
+        if (!SystemPermissionConstants.SUPER_ADMIN.equals(systemPermission)
+                && !SystemPermissionConstants.ADMIN.equals(systemPermission)
+                && !SystemPermissionConstants.USER.equals(systemPermission)) {
+            throw new RuntimeException("非法的系统权限值");
+        }
+
+
+        // 禁止授予 SUPER_ADMIN 权限
+        if (SystemPermissionConstants.SUPER_ADMIN.equals(systemPermission)) {
+            log.warn("拒绝操作：超级管理员权限不可授予，目标用户: {}", targetUser.getUserName());
+            throw new RuntimeException("系统安全限制：超级管理员权限不可授予他人");
+        }
+
+        // 保护唯一超管
+        if (SystemPermissionConstants.SUPER_ADMIN.equals(targetUser.getSystemPermission())) {
+            Long superAdminCount = userMapper.selectCount(
+                    new LambdaQueryWrapper<User>()
+                            .eq(User::getSystemPermission, SystemPermissionConstants.SUPER_ADMIN)
+                            .eq(User::getStatus, 1)
+            );
+
+            if (superAdminCount <= 1) {
+                log.warn("拒绝操作：不能降低系统唯一超级管理员的权限，目标用户: {}", targetUser.getUserName());
+                throw new RuntimeException("系统安全限制：不能降低系统唯一超级管理员的权限");
+            }
+        }
+
+        String oldPermission = targetUser.getSystemPermission();
+        targetUser.setSystemPermission(systemPermission);
+        userMapper.updateById(targetUser);
+
+        // 强制下线
+        kickOutUser(userId);
+
+        log.info("用户 {} 的系统权限已由 {} 变更为 {}",
+                targetUser.getUserName(), oldPermission, systemPermission);
     }
 
     /**

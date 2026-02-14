@@ -56,4 +56,11 @@ public interface UserService {
      * @param userId 用户 id
      */
     void resetPassword(Long userId);
+
+    /**
+     * 修改用户的系统权限（仅超管可用）
+     * @param userId 目标用户ID
+     * @param systemPermission 新的系统权限
+     */
+    void updateSystemPermission(Long userId, String systemPermission);
 }

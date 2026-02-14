@@ -16,6 +16,7 @@ public class User {
     private String userName;
     private String password;
     private Long roleId;
+    private String systemPermission;
     private Short status;
     private LocalDateTime gmtCreated;
     private LocalDateTime gmtModified;

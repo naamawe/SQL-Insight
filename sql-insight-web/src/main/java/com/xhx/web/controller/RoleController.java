@@ -42,14 +42,6 @@ public class RoleController {
     }
 
     /**
-     * 根据系统权限类型获取角色
-     */
-    @GetMapping("/by-permission")
-    public Result<List<Role>> getByPermission(@RequestParam String permission) {
-        return Result.success(roleService.getRolesBySystemPermission(permission));
-    }
-
-    /**
      * 删除角色
      */
     @PreAuthorize("hasAuthority('" + SUPER_ADMIN + "')")

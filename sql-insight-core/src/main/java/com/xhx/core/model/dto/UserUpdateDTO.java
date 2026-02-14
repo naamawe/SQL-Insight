@@ -11,6 +11,8 @@ public class UserUpdateDTO {
     private Long id;
     
     private Long roleId;
-    
+
+    private String systemPermission;
+
     private Short status;
 }

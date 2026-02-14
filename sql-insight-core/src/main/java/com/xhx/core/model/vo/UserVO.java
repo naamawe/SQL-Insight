@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 
 /**
  * 用户视图对象：用于前端页面显示
+ * @author master
  */
 @Data
 public class UserVO {
@@ -16,6 +17,8 @@ public class UserVO {
     
     /** 角色名称 */
     private String roleName;
+
+    private String systemPermission;
     
     /** 状态：1-正常，0-禁用 */
     private Short status;

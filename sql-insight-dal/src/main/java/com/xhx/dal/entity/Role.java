@@ -15,7 +15,6 @@ public class Role {
     private Long id;
     private String roleName;
     private String description;
-    private String systemPermission;
     @TableLogic
     private Integer isDeleted;
     private LocalDateTime gmtCreated;

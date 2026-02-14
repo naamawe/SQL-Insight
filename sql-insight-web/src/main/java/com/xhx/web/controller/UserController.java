@@ -1,6 +1,7 @@
 package com.xhx.web.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.xhx.common.constant.SystemPermissionConstants;
 import com.xhx.common.context.UserContext;
 import com.xhx.common.result.Result;
 import com.xhx.core.model.dto.UserPasswordUpdateDTO;
@@ -8,6 +9,7 @@ import com.xhx.core.model.dto.UserSaveDTO;
 import com.xhx.core.model.dto.UserUpdateDTO;
 import com.xhx.core.model.vo.UserVO;
 import com.xhx.core.service.management.UserService;
+import com.xhx.dal.entity.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -108,6 +110,19 @@ public class UserController {
     @PreAuthorize("hasAnyAuthority('" + SUPER_ADMIN + "')")
     public Result<Void> deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);
-        return Result.success();
+        return Result.success("删除用户成功",null);
+    }
+
+    /**
+     * 修改用户的系统权限
+     */
+    @PutMapping("/{id}/system-permission")
+    @PreAuthorize("hasAuthority('" + SUPER_ADMIN + "')")
+    public Result<Void> updateSystemPermission(
+            @PathVariable Long id,
+            @RequestParam String systemPermission) {
+
+        userService.updateSystemPermission(id, systemPermission);
+        return Result.success("权限已更新，目标用户需重新登录",null);
     }
 }
