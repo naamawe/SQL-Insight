@@ -1,4 +1,4 @@
-package com.xhx.web.dto;
+package com.xhx.web.pojo.dto;
 
 import lombok.Data;
 

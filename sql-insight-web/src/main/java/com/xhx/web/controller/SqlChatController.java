@@ -6,7 +6,7 @@ import com.xhx.core.service.sql.SqlExecutorService;
 import com.xhx.core.service.sql.SqlGeneratorService;
 import com.xhx.dal.entity.ChatSession;
 import com.xhx.dal.mapper.ChatSessionMapper;
-import com.xhx.web.dto.SqlChatResponse;
+import com.xhx.web.pojo.dto.SqlChatResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;

@@ -1,5 +1,6 @@
 package com.xhx.web.filter;
 
+import com.xhx.common.IgnoreUrlsConfig;
 import com.xhx.common.constant.SecurityConstants;
 import com.xhx.common.context.UserContext;
 import com.xhx.core.util.JwtUtil;
@@ -17,6 +18,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -36,6 +38,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
     private final StringRedisTemplate redisTemplate;
+    private final IgnoreUrlsConfig ignoreUrlsConfig;
+    private final AntPathMatcher pathMatcher = new AntPathMatcher();
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String servletPath = request.getServletPath();
+
+        return ignoreUrlsConfig.getHttpUrls().stream()
+                .anyMatch(pattern -> pathMatcher.match(pattern, servletPath));
+    }
+
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, @NotNull HttpServletResponse response, @NotNull FilterChain filterChain)

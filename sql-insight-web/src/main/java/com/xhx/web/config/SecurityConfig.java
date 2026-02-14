@@ -1,5 +1,6 @@
 package com.xhx.web.config;
 
+import com.xhx.common.IgnoreUrlsConfig;
 import com.xhx.common.constant.SystemPermissionConstants;
 import com.xhx.web.filter.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -36,12 +37,15 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final HandlerExceptionResolver resolver;
+    private final IgnoreUrlsConfig ignoreUrlsConfig;
 
     public SecurityConfig(
             JwtAuthenticationFilter jwtAuthenticationFilter,
-            @Qualifier("handlerExceptionResolver") HandlerExceptionResolver resolver) {
+            @Qualifier("handlerExceptionResolver") HandlerExceptionResolver resolver,
+            IgnoreUrlsConfig ignoreUrlsConfig) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.resolver = resolver;
+        this.ignoreUrlsConfig = ignoreUrlsConfig;
     }
 
 
@@ -74,12 +78,13 @@ public class SecurityConfig {
      */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        String[] urls = ignoreUrlsConfig.getHttpUrls().toArray(new String[0]);
         return http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(urls).permitAll()
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex

@@ -2,7 +2,7 @@ package com.xhx.web.controller;
 
 import com.xhx.common.result.Result;
 import com.xhx.core.service.management.RolePermissionService;
-import com.xhx.web.dto.PermissionAssignDTO;
+import com.xhx.web.pojo.dto.PermissionAssignDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;

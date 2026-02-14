@@ -6,6 +6,9 @@ import com.xhx.common.context.UserContext;
 import com.xhx.common.exception.ConnectionException;
 import com.xhx.common.exception.NotExistException;
 import com.xhx.common.exception.ServiceException;
+import com.xhx.core.model.dto.DataSourceSaveDTO;
+import com.xhx.core.model.dto.DataSourceUpdateDTO;
+import com.xhx.core.model.vo.DataSourceVO;
 import com.xhx.core.service.management.DataSourceService;
 import com.xhx.dal.config.DynamicDataSourceManager;
 import com.xhx.dal.entity.DataSource;
@@ -16,6 +19,7 @@ import com.xhx.dal.mapper.TablePermissionMapper;
 import com.xhx.dal.mapper.UserDataSourceMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -23,7 +27,9 @@ import org.springframework.util.StringUtils;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author master
@@ -38,24 +44,31 @@ public class DataSourceServiceImpl implements DataSourceService {
     private final DynamicDataSourceManager dynamicDataSourceManager;
     private final TablePermissionMapper tablePermissionMapper;
 
+    /**
+     * 数据库类型 -> 驱动类名映射表
+     */
+    private static final Map<String, String> DB_DRIVER_MAP = new HashMap<>();
+    static {
+        DB_DRIVER_MAP.put("mysql", "com.mysql.cj.jdbc.Driver");
+        DB_DRIVER_MAP.put("postgresql", "org.postgresql.Driver");
+        DB_DRIVER_MAP.put("oracle", "oracle.jdbc.OracleDriver");
+        DB_DRIVER_MAP.put("sqlserver", "com.microsoft.sqlserver.jdbc.SQLServerDriver");
+    }
+
     @Override
-    public void testConnection(DataSource ds) {
-        try (Connection conn = DriverManager.getConnection(
-                ds.toJdbcUrl(), ds.getUsername(), ds.getPassword())) {
-            if (conn == null || conn.isClosed()) {
-                throw new SQLException("连接建立失败");
-            }
-        } catch (SQLException e) {
-            log.error("数据源 [{}] 连接测试失败: {}", ds.getConnName(), e.getMessage());
-            throw new ConnectionException("连接失败: " + e.getMessage());
-        }
+    public void testConnection(DataSourceSaveDTO saveDto) {
+        DataSource temp = convertToEntity(saveDto);
+        testConnectionInternal(temp);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void addDataSource(DataSource ds) {
-        // 测试连接
-        this.testConnection(ds);
+    public void addDataSource(DataSourceSaveDTO saveDto) {
+        // 先测试连接
+        DataSource ds = convertToEntity(saveDto);
+        testConnectionInternal(ds);
+
+        // 保存到数据库
         dataSourceMapper.insert(ds);
 
         // 默认将该数据源授权给当前创建者
@@ -70,15 +83,12 @@ public class DataSourceServiceImpl implements DataSourceService {
 
     @Override
     public List<String> getTableNames(Long id) {
-        // 获取数据库连接配置
         DataSource ds = dataSourceMapper.selectById(id);
         if (ds == null) {
             throw new NotExistException("数据源不存在");
         }
 
         List<String> tables = new ArrayList<>();
-
-        // 获取连接池里的连接
         javax.sql.DataSource pooledDs = dynamicDataSourceManager.getDataSource(ds);
 
         try (Connection conn = pooledDs.getConnection()) {
@@ -101,29 +111,56 @@ public class DataSourceServiceImpl implements DataSourceService {
     }
 
     @Override
-    public Page<DataSource> getDataSourcePage(int current, int size, String connName) {
+    public Page<DataSourceVO> getDataSourcePage(int current, int size, String connName) {
         Page<DataSource> page = new Page<>(current, size);
 
         LambdaQueryWrapper<DataSource> wrapper = new LambdaQueryWrapper<>();
-
         if (StringUtils.hasText(connName)) {
             wrapper.like(DataSource::getConnName, connName);
         }
         wrapper.select(DataSource.class, info -> !"password".equals(info.getColumn()));
         wrapper.orderByDesc(DataSource::getGmtCreated);
 
-        return dataSourceMapper.selectPage(page, wrapper);
+        Page<DataSource> entityPage = dataSourceMapper.selectPage(page, wrapper);
+
+        Page<DataSourceVO> voPage = new Page<>(current, size, entityPage.getTotal());
+        List<DataSourceVO> voList = entityPage.getRecords().stream()
+                .map(this::convertToVO)
+                .toList();
+        voPage.setRecords(voList);
+
+        return voPage;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateDataSource(DataSource ds) {
-        this.testConnection(ds);
+    public void updateDataSource(DataSourceUpdateDTO updateDto) {
+        DataSource oldDs = dataSourceMapper.selectById(updateDto.getId());
+        if (oldDs == null) {
+            throw new NotExistException("数据源不存在");
+        }
 
-        dataSourceMapper.updateById(ds);
-        dynamicDataSourceManager.removeDataSource(ds.getId());
+        // 复制新数据
+        DataSource newDs = new DataSource();
+        BeanUtils.copyProperties(updateDto, newDs);
 
-        log.info("==> 数据源 [{}] 配置已更新，旧连接池已释放", ds.getConnName());
+        if (!StringUtils.hasText(updateDto.getPassword())) {
+            newDs.setPassword(oldDs.getPassword());
+        }
+
+        // 自动设置驱动类名
+        newDs.setDriverClassName(getDriverClassName(updateDto.getDbType()));
+
+        // 测试新配置
+        testConnectionInternal(newDs);
+
+        // 更新数据库
+        dataSourceMapper.updateById(newDs);
+
+        // 清除旧连接池
+        dynamicDataSourceManager.removeDataSource(newDs.getId());
+
+        log.info("==> 数据源 [{}] 配置已更新，旧连接池已释放", newDs.getConnName());
     }
 
     @Override
@@ -134,14 +171,133 @@ public class DataSourceServiceImpl implements DataSourceService {
             return;
         }
 
+        // 清除连接池
         dynamicDataSourceManager.removeDataSource(id);
 
+        // 删除关联权限
         userDataSourceMapper.delete(new LambdaQueryWrapper<UserDataSource>()
                 .eq(UserDataSource::getDataSourceId, id));
         tablePermissionMapper.delete(new LambdaQueryWrapper<TablePermission>()
                 .eq(TablePermission::getDataSourceId, id));
 
+        // 逻辑删除
         dataSourceMapper.deleteById(id);
         log.info("==> 数据源 [{}] 已执行软删除，物理连接已释放", ds.getConnName());
+    }
+
+    @Override
+    public List<DataSourceVO> getAllDataSources() {
+        List<DataSource> list = dataSourceMapper.selectList(
+                new LambdaQueryWrapper<DataSource>()
+                        .select(DataSource.class, info -> !"password".equals(info.getColumn()))
+                        .orderByDesc(DataSource::getGmtCreated)
+        );
+
+        return list.stream()
+                .map(this::convertToVO)
+                .toList();
+    }
+
+    @Override
+    public DataSourceVO getDataSourceById(Long id) {
+        DataSource ds = dataSourceMapper.selectOne(
+                new LambdaQueryWrapper<DataSource>()
+                        .select(DataSource.class, info -> !"password".equals(info.getColumn()))
+                        .eq(DataSource::getId, id)
+        );
+
+        if (ds == null) {
+            throw new NotExistException("数据源不存在");
+        }
+
+        return convertToVO(ds);
+    }
+
+    @Override
+    public List<DataSourceVO> getMyDataSources(Long userId) {
+        // 1. 查询用户有权访问的数据源ID列表
+        List<Long> authorizedIds = userDataSourceMapper.selectList(
+                        new LambdaQueryWrapper<UserDataSource>()
+                                .eq(UserDataSource::getUserId, userId)
+                ).stream()
+                .map(UserDataSource::getDataSourceId)
+                .toList();
+
+        if (authorizedIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 2. 批量查询数据源详情（不包含密码）
+        List<DataSource> list = dataSourceMapper.selectList(
+                new LambdaQueryWrapper<DataSource>()
+                        .select(DataSource.class, info -> !"password".equals(info.getColumn()))
+                        .in(DataSource::getId, authorizedIds)
+                        .orderByDesc(DataSource::getGmtCreated)
+        );
+
+        return list.stream()
+                .map(this::convertToVO)
+                .toList();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchDeleteDataSources(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+
+        for (Long id : ids) {
+            deleteDataSource(id);
+        }
+
+        log.info("==> 批量删除数据源成功，共删除 {} 个", ids.size());
+    }
+
+    // ========== 私有辅助方法 ==========
+
+    /**
+     * 测试连接（内部方法）
+     */
+    private void testConnectionInternal(DataSource ds) {
+        try (Connection conn = DriverManager.getConnection(
+                ds.toJdbcUrl(), ds.getUsername(), ds.getPassword())) {
+            if (conn == null || conn.isClosed()) {
+                throw new SQLException("连接建立失败");
+            }
+        } catch (SQLException e) {
+            log.error("数据源 [{}] 连接测试失败: {}", ds.getConnName(), e.getMessage());
+            throw new ConnectionException("连接失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * DTO -> Entity
+     */
+    private DataSource convertToEntity(DataSourceSaveDTO saveDto) {
+        DataSource ds = new DataSource();
+        BeanUtils.copyProperties(saveDto, ds);
+        ds.setDriverClassName(getDriverClassName(saveDto.getDbType()));
+        return ds;
+    }
+
+    /**
+     * Entity -> VO
+     */
+    private DataSourceVO convertToVO(DataSource entity) {
+        DataSourceVO vo = new DataSourceVO();
+        BeanUtils.copyProperties(entity, vo);
+        return vo;
+    }
+
+    /**
+     * 根据数据库类型自动获取驱动类名
+     */
+    private String getDriverClassName(String dbType) {
+        String driver = DB_DRIVER_MAP.get(dbType.toLowerCase());
+        if (driver == null) {
+            throw new ServiceException("不支持的数据库类型: " + dbType);
+        }
+        return driver;
     }
 }
