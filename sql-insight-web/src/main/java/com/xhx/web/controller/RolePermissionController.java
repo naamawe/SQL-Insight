@@ -1,12 +1,15 @@
 package com.xhx.web.controller;
 
 import com.xhx.common.result.Result;
-import com.xhx.core.service.RolePermissionService;
+import com.xhx.core.service.management.RolePermissionService;
 import com.xhx.web.dto.PermissionAssignDTO;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+
+import static com.xhx.common.constant.SystemPermissionConstants.ADMIN;
 
 /**
  * 角色权限管理控制层
@@ -15,6 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/admin/role/permission")
 @RequiredArgsConstructor
+@PreAuthorize("hasAuthority('" + ADMIN + "')")
 public class RolePermissionController {
 
     private final RolePermissionService rolePermissionService;

@@ -2,7 +2,7 @@ package com.xhx.web.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xhx.common.result.Result;
-import com.xhx.core.service.DataSourceService;
+import com.xhx.core.service.management.DataSourceService;
 import com.xhx.dal.entity.DataSource;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;

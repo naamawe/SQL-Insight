@@ -7,40 +7,46 @@ import com.xhx.core.model.dto.UserPasswordUpdateDTO;
 import com.xhx.core.model.dto.UserSaveDTO;
 import com.xhx.core.model.dto.UserUpdateDTO;
 import com.xhx.core.model.vo.UserVO;
-import com.xhx.core.service.UserService;
+import com.xhx.core.service.management.UserService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import static com.xhx.common.constant.SystemPermissionConstants.*;
 
 /**
  * 用户管理接口
  * @author master
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
+@PreAuthorize("hasAuthority('" + USER + "')")
 public class UserController {
 
     private final UserService userService;
 
     /**
      * 分页查询用户
-     * 权限：ADMIN 或 SUPER_ADMIN
      */
     @GetMapping("/page")
-    @PreAuthorize("hasAuthority('ADMIN') or hasAuthority('SUPER_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('" + ADMIN + "')")
     public Result<Page<UserVO>> getUserPage(
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String username) {
-        return Result.success(userService.getUserPage(current, size, username));
+        Page<UserVO> userPage = userService.getUserPage(current, size, username);
+        log.info("用户: {}, 持有原始权限: {}", UserContext.getUser().getUserId(), UserContext.getUser().getRoles());
+        return Result.success(userPage);
     }
 
     /**
      * 获取单个用户详情
      */
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('USER')")
+    @PreAuthorize("hasAnyAuthority('" + ADMIN + "')")
     public Result<UserVO> getUserById(@PathVariable Long id) {
         return Result.success(userService.getUserById(id));
     }
@@ -56,10 +62,9 @@ public class UserController {
 
     /**
      * 新增用户
-     * 权限：仅限 SUPER_ADMIN
      */
     @PostMapping
-    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('" + SUPER_ADMIN + "')")
     public Result<Void> saveUser(@RequestBody UserSaveDTO saveDto) {
         userService.saveUser(saveDto);
         return Result.success();
@@ -67,10 +72,9 @@ public class UserController {
 
     /**
      * 修改用户（角色、状态等）
-     * 权限：ADMIN 或 SUPER_ADMIN
      */
     @PutMapping
-    @PreAuthorize("hasAuthority('ADMIN') or hasAuthority('SUPER_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('" + ADMIN + "')")
     public Result<Void> updateUser(@RequestBody UserUpdateDTO updateDto) {
         userService.updateUser(updateDto);
         return Result.success();
@@ -78,7 +82,6 @@ public class UserController {
 
     /**
      * 用户修改自己的密码
-     * 逻辑：通过 UserContext 确定身份，无需前端传 userId
      */
     @PutMapping("/password")
     public Result<Void> updateMyPassword(@RequestBody UserPasswordUpdateDTO passwordDto) {
@@ -89,10 +92,9 @@ public class UserController {
 
     /**
      * 管理员重置他人密码
-     * 权限：仅限 SUPER_ADMIN
      */
     @PutMapping("/{id}/password/reset")
-    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('" + SUPER_ADMIN + "')")
     public Result<Void> resetPassword(@PathVariable Long id) {
         userService.resetPassword(id);
         return Result.success();
@@ -103,7 +105,7 @@ public class UserController {
      * 权限：仅限 SUPER_ADMIN
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('SUPER_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('" + SUPER_ADMIN + "')")
     public Result<Void> deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);
         return Result.success();

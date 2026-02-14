@@ -1,20 +1,14 @@
 package com.xhx.core.service.auth.Impl;
 
-import com.alibaba.fastjson2.JSON;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.xhx.common.constant.SecurityConstants;
 import com.xhx.common.context.UserContext;
 import com.xhx.core.model.LoginUser;
 import com.xhx.core.model.dto.LoginDTO;
-import com.xhx.core.service.RolePermissionService;
+import com.xhx.core.service.management.RolePermissionService;
 import com.xhx.core.service.auth.AuthService;
 import com.xhx.core.util.JwtUtil;
-import com.xhx.dal.entity.QueryPolicy;
-import com.xhx.dal.entity.TablePermission;
 import com.xhx.dal.entity.User;
-import com.xhx.dal.mapper.QueryPolicyMapper;
-import com.xhx.dal.mapper.TablePermissionMapper;
 import com.xhx.dal.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,7 +20,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**

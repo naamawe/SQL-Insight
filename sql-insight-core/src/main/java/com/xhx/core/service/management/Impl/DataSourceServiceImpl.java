@@ -1,4 +1,4 @@
-package com.xhx.core.service.Impl;
+package com.xhx.core.service.management.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -6,7 +6,7 @@ import com.xhx.common.context.UserContext;
 import com.xhx.common.exception.ConnectionException;
 import com.xhx.common.exception.NotExistException;
 import com.xhx.common.exception.ServiceException;
-import com.xhx.core.service.DataSourceService;
+import com.xhx.core.service.management.DataSourceService;
 import com.xhx.dal.config.DynamicDataSourceManager;
 import com.xhx.dal.entity.DataSource;
 import com.xhx.dal.entity.TablePermission;

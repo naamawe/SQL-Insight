@@ -1,12 +1,12 @@
-package com.xhx.core.service.Impl;
+package com.xhx.core.service.sql.Impl;
 
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.xhx.ai.service.SqlAssistant;
 import com.xhx.common.constant.SecurityConstants;
-import com.xhx.core.service.SchemaCollectorService;
-import com.xhx.core.service.SqlGeneratorService;
-import com.xhx.core.service.SqlSecurityService;
+import com.xhx.core.service.sql.SchemaCollectorService;
+import com.xhx.core.service.sql.SqlGeneratorService;
+import com.xhx.core.service.sql.SqlSecurityService;
 import com.xhx.dal.entity.*;
 import com.xhx.dal.mapper.*;
 import lombok.RequiredArgsConstructor;

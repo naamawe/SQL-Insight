@@ -1,10 +1,10 @@
-package com.xhx.core.service.Impl;
+package com.xhx.core.service.management.Impl;
 
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.xhx.common.constant.SecurityConstants;
-import com.xhx.core.service.RolePermissionService;
+import com.xhx.core.service.management.RolePermissionService;
 import com.xhx.dal.entity.QueryPolicy;
 import com.xhx.dal.entity.TablePermission;
 import com.xhx.dal.entity.User;

@@ -1,7 +1,7 @@
 package com.xhx.web.controller;
 
 import com.xhx.common.result.Result;
-import com.xhx.core.service.QueryPolicyService;
+import com.xhx.core.service.management.QueryPolicyService;
 import com.xhx.dal.entity.QueryPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;

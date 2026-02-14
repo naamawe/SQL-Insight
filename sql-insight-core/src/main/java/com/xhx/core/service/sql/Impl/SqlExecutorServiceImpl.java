@@ -1,6 +1,6 @@
-package com.xhx.core.service.Impl;
+package com.xhx.core.service.sql.Impl;
 
-import com.xhx.core.service.SqlExecutorService;
+import com.xhx.core.service.sql.SqlExecutorService;
 import com.xhx.dal.config.DynamicDataSourceManager;
 import com.xhx.dal.entity.DataSource;
 import com.xhx.dal.mapper.DataSourceMapper;

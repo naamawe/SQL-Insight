@@ -1,9 +1,9 @@
-package com.xhx.core.service.Impl;
+package com.xhx.core.service.management.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.xhx.core.service.QueryPolicyService;
-import com.xhx.core.service.RolePermissionService;
+import com.xhx.core.service.management.QueryPolicyService;
+import com.xhx.core.service.management.RolePermissionService;
 import com.xhx.dal.entity.QueryPolicy;
 import com.xhx.dal.entity.User;
 import com.xhx.dal.mapper.QueryPolicyMapper;

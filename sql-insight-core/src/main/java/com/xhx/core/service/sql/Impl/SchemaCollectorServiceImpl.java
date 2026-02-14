@@ -1,8 +1,8 @@
-package com.xhx.core.service.Impl;
+package com.xhx.core.service.sql.Impl;
 
 import com.xhx.core.extractor.MetadataExtractor;
 import com.xhx.core.model.TableMetadata;
-import com.xhx.core.service.SchemaCollectorService;
+import com.xhx.core.service.sql.SchemaCollectorService;
 import com.xhx.dal.config.DynamicDataSourceManager;
 import com.xhx.dal.entity.DataSource;
 import lombok.RequiredArgsConstructor;

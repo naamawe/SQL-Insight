@@ -1,4 +1,4 @@
-package com.xhx.core.service;
+package com.xhx.core.service.management;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xhx.dal.entity.DataSource;

@@ -1,7 +1,7 @@
 package com.xhx.core.config;
 
 import com.xhx.ai.service.SqlAssistant;
-import com.xhx.core.service.ChatMemoryStore;
+import com.xhx.core.service.sql.ChatMemoryStore;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.service.AiServices;

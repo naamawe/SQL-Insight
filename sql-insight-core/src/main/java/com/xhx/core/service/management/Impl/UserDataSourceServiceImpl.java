@@ -1,9 +1,9 @@
-package com.xhx.core.service.Impl;
+package com.xhx.core.service.management.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.xhx.common.constant.SecurityConstants;
-import com.xhx.core.service.UserDataSourceService;
+import com.xhx.core.service.management.UserDataSourceService;
 import com.xhx.dal.entity.UserDataSource;
 import com.xhx.dal.mapper.UserDataSourceMapper;
 import lombok.RequiredArgsConstructor;

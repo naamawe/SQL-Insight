@@ -2,22 +2,23 @@ package com.xhx.web.controller;
 
 import com.xhx.common.context.UserContext;
 import com.xhx.common.result.Result;
-import com.xhx.core.service.SqlExecutorService;
-import com.xhx.core.service.SqlGeneratorService;
+import com.xhx.core.service.sql.SqlExecutorService;
+import com.xhx.core.service.sql.SqlGeneratorService;
 import com.xhx.dal.entity.ChatSession;
 import com.xhx.dal.mapper.ChatSessionMapper;
 import com.xhx.web.dto.SqlChatResponse;
-import dev.langchain4j.model.chat.response.ChatResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+
+import static com.xhx.common.constant.SystemPermissionConstants.USER;
 
 /**
  * @author master
@@ -26,6 +27,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/ai")
 @RequiredArgsConstructor
+@PreAuthorize("hasAnyAuthority('" + USER + "')")
 public class SqlChatController {
 
     private final SqlGeneratorService sqlGeneratorService;

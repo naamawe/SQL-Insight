@@ -1,7 +1,7 @@
-package com.xhx.core.service.Impl;
+package com.xhx.core.service.sql.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.xhx.core.service.ChatMemoryStore;
+import com.xhx.core.service.sql.ChatMemoryStore;
 import com.xhx.dal.entity.ChatMessageEntity;
 import com.xhx.dal.mapper.ChatMessageMapper;
 import dev.langchain4j.data.message.*;

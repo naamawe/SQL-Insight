@@ -1,8 +1,8 @@
-package com.xhx.core.service.Impl;
+package com.xhx.core.service.sql.Impl;
 
 import com.alibaba.fastjson2.JSON;
 import com.xhx.common.constant.SecurityConstants;
-import com.xhx.core.service.SqlSecurityService;
+import com.xhx.core.service.sql.SqlSecurityService;
 import com.xhx.dal.entity.QueryPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

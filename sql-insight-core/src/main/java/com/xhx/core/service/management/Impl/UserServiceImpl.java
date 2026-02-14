@@ -1,4 +1,4 @@
-package com.xhx.core.service.Impl;
+package com.xhx.core.service.management.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -7,7 +7,7 @@ import com.xhx.core.model.dto.UserPasswordUpdateDTO;
 import com.xhx.core.model.dto.UserSaveDTO;
 import com.xhx.core.model.dto.UserUpdateDTO;
 import com.xhx.core.model.vo.UserVO;
-import com.xhx.core.service.UserService;
+import com.xhx.core.service.management.UserService;
 import com.xhx.dal.entity.Role;
 import com.xhx.dal.entity.User;
 import com.xhx.dal.entity.UserDataSource;

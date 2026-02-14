@@ -1,9 +1,10 @@
-package com.xhx.core.service.Impl;
+package com.xhx.core.service.management.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.xhx.common.constant.SystemPermissionConstants;
-import com.xhx.core.service.RoleService;
+import com.xhx.common.context.UserContext;
+import com.xhx.core.service.management.RoleService;
 import com.xhx.dal.entity.Role;
 import com.xhx.dal.mapper.RoleMapper;
 import lombok.extern.slf4j.Slf4j;

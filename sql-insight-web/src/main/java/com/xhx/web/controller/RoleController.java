@@ -1,7 +1,7 @@
 package com.xhx.web.controller;
 
 import com.xhx.common.result.Result;
-import com.xhx.core.service.RoleService;
+import com.xhx.core.service.management.RoleService;
 import com.xhx.dal.entity.Role;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -18,6 +18,7 @@ import static com.xhx.common.constant.SystemPermissionConstants.SUPER_ADMIN;
 @RestController
 @RequestMapping("/admin/role")
 @RequiredArgsConstructor
+@PreAuthorize("hasAuthority('" + ADMIN + "')")
 public class RoleController {
 
     private final RoleService roleService;
@@ -34,9 +35,7 @@ public class RoleController {
 
     /**
      * 获取所有角色列表
-     * 管理员及以上可见，用于在给用户分配角色时进行下拉选择
      */
-    @PreAuthorize("hasAnyAuthority('" + SUPER_ADMIN + "', '" + ADMIN + "')")
     @GetMapping("/list")
     public Result<List<Role>> listAll() {
         return Result.success(roleService.list());

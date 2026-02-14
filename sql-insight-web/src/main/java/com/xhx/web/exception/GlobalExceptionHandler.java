@@ -4,6 +4,7 @@ import com.xhx.common.exception.BaseException;
 import com.xhx.common.result.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -24,6 +25,18 @@ public class GlobalExceptionHandler {
         log.warn("业务逻辑异常 [{}]: {}", e.getClass().getSimpleName(), e.getMessage());
         return Result.error(e.getCode(), e.getMessage());
     }
+
+
+    /**
+     * 捕获 Spring Security 认证失败异常（用户名或密码错误）
+     */
+    @ExceptionHandler(BadCredentialsException.class)
+    public Result<Void> handleBadCredentialsException(BadCredentialsException e) {
+        log.warn("登录失败: {}", e.getMessage());
+        // 返回你自定义的 Result 格式
+        return Result.error(401, "用户名或密码错误");
+    }
+
 
     // Spring Security 认证异常 (401)
     @ExceptionHandler(AuthenticationException.class)

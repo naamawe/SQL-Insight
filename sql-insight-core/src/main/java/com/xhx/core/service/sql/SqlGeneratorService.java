@@ -1,4 +1,4 @@
-package com.xhx.core.service;
+package com.xhx.core.service.sql;
 
 /**
  * @author master
