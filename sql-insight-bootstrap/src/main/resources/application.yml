@@ -5,7 +5,7 @@ spring:
   application:
     name: sql-insight-bootstrap
   profiles:
-    active: dev
+    active: local
 
 logging:
   config: classpath:logback-spring.xml
