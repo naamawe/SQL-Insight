@@ -22,3 +22,19 @@ logs/
 # --- Temp ---
 temp/
 tmp/
+# --- Configuration & Secrets ---
+.env
+application-local.yml
+
+# --- IDE & Build ---
+*.class
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# --- Others ---
+.project
+.settings/
+.classpath

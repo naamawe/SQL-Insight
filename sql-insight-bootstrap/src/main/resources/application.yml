@@ -1,42 +1,21 @@
 server:
   port: 8080
+
 spring:
   application:
     name: sql-insight-bootstrap
-  datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/sql_insight?useSSL=false&serverTimezone=UTC&characterEncoding=utf-8
-    username: root
-    password: '050126'
-  data:
-    redis:
-      port: 6379
-      host: 192.168.150.129
-      database: 0
-      timeout: 2000ms
-      lettuce:
-        pool:
-          max-active: 10
-          max-idle: 5
-          min-idle: 1
-          max-wait: 1000ms
+  profiles:
+    active: dev
+
 logging:
   config: classpath:logback-spring.xml
-langchain4j:
-  open-ai:
-    chat-model:
-      base-url: https://api.deepseek.com
-      api-key: sk-ef213128ffba449fb656dd66254eb8e9
-      model-name: deepseek-reasoner
-      timeout: 60000
-      max-retries: 3
-      temperature: 0.0
-      log-requests: true
-      log-responses: true
+
 jwt:
-  secret: 74HH0nnPS4qr9HJUOkhT0D1v5Y1By3rCymqR4Zw/akw=
+  secret: ${JWT_SECRET:74HH0nnPS4qr9HJUOkhT0D1v5Y1By3rCymqR4Zw/akw=}
   expiration: 86400000
+
 defaultPassword: default123
+
 mybatis-plus:
   global-config:
     db-config:
