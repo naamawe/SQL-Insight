@@ -21,6 +21,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -104,5 +106,17 @@ public class AuthServiceImpl implements AuthService {
         log.info("==> 用户 {} 请求退出登录", UserContext.getUserId());
         String redisKey = SecurityConstants.REDIS_TOKEN_KEY + UserContext.getUserId();
         redisTemplate.delete(redisKey);
+    }
+
+    @Override
+    public Map<String, Object> getCurrentUserInfo() {
+        UserContext.LoginUser loginUser = UserContext.getUser();
+
+        Map<String, Object> userInfo = new HashMap<>();
+        userInfo.put("userId", loginUser.getUserId());
+        userInfo.put("username", loginUser.getUsername());
+        userInfo.put("permissions", loginUser.getRoles());
+
+        return userInfo;
     }
 }

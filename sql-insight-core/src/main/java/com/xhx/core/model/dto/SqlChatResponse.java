@@ -1,4 +1,4 @@
-package com.xhx.web.pojo.dto;
+package com.xhx.core.model.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

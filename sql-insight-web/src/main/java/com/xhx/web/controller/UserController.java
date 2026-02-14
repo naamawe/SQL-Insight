@@ -1,7 +1,6 @@
 package com.xhx.web.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.xhx.common.constant.SystemPermissionConstants;
 import com.xhx.common.context.UserContext;
 import com.xhx.common.result.Result;
 import com.xhx.core.model.dto.UserPasswordUpdateDTO;
@@ -9,7 +8,6 @@ import com.xhx.core.model.dto.UserSaveDTO;
 import com.xhx.core.model.dto.UserUpdateDTO;
 import com.xhx.core.model.vo.UserVO;
 import com.xhx.core.service.management.UserService;
-import com.xhx.dal.entity.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;

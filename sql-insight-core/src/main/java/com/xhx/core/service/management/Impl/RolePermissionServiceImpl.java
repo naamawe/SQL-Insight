@@ -20,8 +20,11 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.CollectionUtils;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * 角色权限服务 - 最终完善版
@@ -128,5 +131,23 @@ public class RolePermissionServiceImpl extends ServiceImpl<TablePermissionMapper
                 .eq(TablePermission::getDataSourceId, dataSourceId)
                 .eq(TablePermission::getTableName, tableName));
         return count > 0;
+    }
+
+    @Override
+    public Map<Long, List<String>> getRolePermissionSummary(Long roleId) {
+        List<TablePermission> allPerms = this.list(
+                new LambdaQueryWrapper<TablePermission>().eq(TablePermission::getRoleId, roleId)
+        );
+
+        if (allPerms.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        // 按数据源分组
+        return allPerms.stream()
+                .collect(Collectors.groupingBy(
+                        TablePermission::getDataSourceId,
+                        Collectors.mapping(TablePermission::getTableName, Collectors.toList())
+                ));
     }
 }

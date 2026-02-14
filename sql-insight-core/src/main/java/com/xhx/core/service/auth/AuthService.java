@@ -1,6 +1,7 @@
 package com.xhx.core.service.auth;
 
 import com.xhx.core.model.dto.LoginDTO;
+import java.util.Map;
 
 /**
  * 认证服务接口
@@ -9,14 +10,11 @@ import com.xhx.core.model.dto.LoginDTO;
 public interface AuthService {
     /**
      * 用户登录
-     * @param loginDto 登录参数
-     * @return JWT Token
      */
     String login(LoginDTO loginDto);
 
     /**
      * 用户注册
-     * @param registerDto 注册参数
      */
     void register(LoginDTO registerDto);
 
@@ -24,4 +22,9 @@ public interface AuthService {
      * 退出登录
      */
     void logout();
+
+    /**
+     * 获取当前登录用户信息
+     */
+    Map<String, Object> getCurrentUserInfo();
 }

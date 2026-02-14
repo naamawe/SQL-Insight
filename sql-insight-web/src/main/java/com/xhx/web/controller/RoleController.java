@@ -13,25 +13,17 @@ import static com.xhx.common.constant.SystemPermissionConstants.ADMIN;
 import static com.xhx.common.constant.SystemPermissionConstants.SUPER_ADMIN;
 
 /**
+ * 角色管理
  * @author master
  */
 @RestController
-@RequestMapping("/admin/role")
+@RequestMapping("/api/roles")
 @RequiredArgsConstructor
 @PreAuthorize("hasAuthority('" + ADMIN + "')")
 public class RoleController {
+    // TODO 需要把role实体类改为dto包装类
 
     private final RoleService roleService;
-
-    /**
-     * 创建新角色（挂载点）
-     * 只有超级管理员可以定义新的角色
-     */
-    @PreAuthorize("hasAuthority('" + SUPER_ADMIN + "')")
-    @PostMapping("/add")
-    public Result<Long> addRole(@RequestBody Role role) {
-        return Result.success(roleService.createRole(role));
-    }
 
     /**
      * 获取所有角色列表
@@ -42,12 +34,44 @@ public class RoleController {
     }
 
     /**
+     * 根据ID获取角色详情
+     */
+    @GetMapping("/{id}")
+    public Result<Role> getById(@PathVariable Long id) {
+        Role role = roleService.getById(id);
+        if (role == null) {
+            return Result.error("角色不存在");
+        }
+        return Result.success(role);
+    }
+
+    /**
+     * 创建新角色
+     */
+    @PostMapping
+    @PreAuthorize("hasAuthority('" + SUPER_ADMIN + "')")
+    public Result<Long> addRole(@RequestBody Role role) {
+        Long roleId = roleService.createRole(role);
+        return Result.success("角色创建成功", roleId);
+    }
+
+    /**
+     * 修改角色信息
+     */
+    @PutMapping
+    @PreAuthorize("hasAuthority('" + SUPER_ADMIN + "')")
+    public Result<Void> updateRole(@RequestBody Role role) {
+        roleService.updateRole(role);
+        return Result.success("角色更新成功", null);
+    }
+
+    /**
      * 删除角色
      */
-    @PreAuthorize("hasAuthority('" + SUPER_ADMIN + "')")
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('" + SUPER_ADMIN + "')")
     public Result<Void> deleteRole(@PathVariable Long id) {
-        roleService.removeById(id);
-        return Result.success();
+        roleService.deleteRole(id);
+        return Result.success("角色删除成功", null);
     }
 }

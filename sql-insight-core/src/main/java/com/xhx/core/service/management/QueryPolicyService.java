@@ -19,4 +19,9 @@ public interface QueryPolicyService extends IService<QueryPolicy> {
      * 根据角色 ID 获取策略
      */
     QueryPolicy getByRoleId(Long roleId);
+
+    /**
+     * 删除查询策略
+     */
+    void deletePolicy(Long roleId);
 }

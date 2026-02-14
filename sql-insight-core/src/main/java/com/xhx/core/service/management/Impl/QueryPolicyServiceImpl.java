@@ -46,20 +46,40 @@ public class QueryPolicyServiceImpl extends ServiceImpl<QueryPolicyMapper, Query
         }
     }
 
+    @Override
+    public QueryPolicy getByRoleId(Long roleId) {
+        return this.getOne(new LambdaQueryWrapper<QueryPolicy>().eq(QueryPolicy::getRoleId, roleId));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deletePolicy(Long roleId) {
+        this.remove(new LambdaQueryWrapper<QueryPolicy>().eq(QueryPolicy::getRoleId, roleId));
+
+        // 删除策略后刷新用户缓存
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    refreshUsersUnderRole(roleId);
+                }
+            });
+        } else {
+            refreshUsersUnderRole(roleId);
+        }
+
+        log.info("==> 角色 {} 的查询策略已删除", roleId);
+    }
+
     private void refreshUsersUnderRole(Long roleId) {
         // 找到该角色下所有用户
         List<User> users = userMapper.selectList(
                 new LambdaQueryWrapper<User>().select(User::getId).eq(User::getRoleId, roleId));
-        
+
         // 调用 RolePermissionService 中那个“全能”的刷新方法
         // 因为那个方法同时负责刷新表权限和 Policy 策略到 Redis
         users.forEach(user -> rolePermissionService.refreshUserPermissionsCache(user.getId(), roleId));
-        
-        log.info("==> 查询策略已变更，已同步刷新角色 {} 下 {} 个用户的安全快照", roleId, users.size());
-    }
 
-    @Override
-    public QueryPolicy getByRoleId(Long roleId) {
-        return this.getOne(new LambdaQueryWrapper<QueryPolicy>().eq(QueryPolicy::getRoleId, roleId));
+        log.info("==> 查询策略已变更，已同步刷新角色 {} 下 {} 个用户的安全快照", roleId, users.size());
     }
 }

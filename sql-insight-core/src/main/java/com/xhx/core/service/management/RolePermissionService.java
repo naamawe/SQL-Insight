@@ -3,6 +3,7 @@ package com.xhx.core.service.management;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.xhx.dal.entity.TablePermission;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 角色表权限服务接口
@@ -32,4 +33,11 @@ public interface RolePermissionService extends IService<TablePermission> {
      * @param roleId 角色ID
      */
     void refreshUserPermissionsCache(Long userId, Long roleId);
+
+    /**
+     * 获取角色在所有数据源下的权限汇总
+     * @param roleId 角色ID
+     * @return Map<数据源ID, 表名列表>
+     */
+    Map<Long, List<String>> getRolePermissionSummary(Long roleId);
 }

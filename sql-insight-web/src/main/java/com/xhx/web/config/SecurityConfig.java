@@ -34,6 +34,7 @@ import java.util.Collections;
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
+    //TODO 需要解决权限问题，当前权限混乱，疑似注解未生效
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final HandlerExceptionResolver resolver;
