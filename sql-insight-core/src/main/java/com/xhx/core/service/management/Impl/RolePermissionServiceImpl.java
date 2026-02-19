@@ -4,13 +4,11 @@ import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.xhx.common.constant.SecurityConstants;
+import com.xhx.common.exception.ServiceException;
+import com.xhx.core.service.management.DataSourceService;
 import com.xhx.core.service.management.RolePermissionService;
-import com.xhx.dal.entity.QueryPolicy;
-import com.xhx.dal.entity.TablePermission;
-import com.xhx.dal.entity.User;
-import com.xhx.dal.mapper.QueryPolicyMapper;
-import com.xhx.dal.mapper.TablePermissionMapper;
-import com.xhx.dal.mapper.UserMapper;
+import com.xhx.dal.entity.*;
+import com.xhx.dal.mapper.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -20,9 +18,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.CollectionUtils;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -38,13 +34,41 @@ public class RolePermissionServiceImpl extends ServiceImpl<TablePermissionMapper
     private final UserMapper userMapper;
     private final QueryPolicyMapper queryPolicyMapper;
     private final StringRedisTemplate redisTemplate;
+    private final RoleMapper roleMapper;
+    private final DataSourceService dataSourceService;
+    private final DataSourceMapper dataSourceMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void assignTablePermissions(Long roleId, Long dataSourceId, List<String> tableNames) {
+        boolean roleExists = roleMapper.exists(new LambdaQueryWrapper<Role>().eq(Role::getId, roleId));
+        if (!roleExists) {
+            throw new ServiceException("角色不存在");
+        }
+
+        boolean ds = dataSourceMapper.exists(new LambdaQueryWrapper<DataSource>().eq(DataSource::getId, dataSourceId));
+        if (!ds) {
+            throw new ServiceException("数据源不存在");
+        }
+
+        // 校验是否是合法表名
+        if (!CollectionUtils.isEmpty(tableNames)) {
+            List<String> actualTables = dataSourceService.getTableNames(dataSourceId);
+
+            Set<String> actualTableSet = new HashSet<>(actualTables);
+            List<String> invalidTables = tableNames.stream()
+                    .filter(name -> !actualTableSet.contains(name))
+                    .toList();
+
+            if (!invalidTables.isEmpty()) {
+                throw new ServiceException("包含非法表名: " + invalidTables);
+            }
+        }
+
         this.remove(new LambdaQueryWrapper<TablePermission>()
                 .eq(TablePermission::getRoleId, roleId)
                 .eq(TablePermission::getDataSourceId, dataSourceId));
+
 
         if (!CollectionUtils.isEmpty(tableNames)) {
             List<TablePermission> permissions = tableNames.stream().map(name -> {
@@ -58,7 +82,6 @@ public class RolePermissionServiceImpl extends ServiceImpl<TablePermissionMapper
             this.saveBatch(permissions);
         }
 
-        // 数据真正入库后再操作缓存，避免缓存读到未提交的变更
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
