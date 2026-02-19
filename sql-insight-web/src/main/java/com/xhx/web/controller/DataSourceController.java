@@ -2,6 +2,7 @@ package com.xhx.web.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xhx.common.context.UserContext;
+import com.xhx.common.exception.ServiceException;
 import com.xhx.common.result.Result;
 import com.xhx.core.model.dto.DataSourceSaveDTO;
 import com.xhx.core.model.dto.DataSourceUpdateDTO;
@@ -132,7 +133,7 @@ public class DataSourceController {
         DataSourceVO target = myDataSources.stream()
                 .filter(ds -> ds.getId().equals(id))
                 .findFirst()
-                .orElseThrow(() -> new RuntimeException("无权访问该数据源或数据源不存在"));
+                .orElseThrow(() -> new ServiceException("无权访问该数据源或数据源不存在"));
 
         return Result.success(target);
     }

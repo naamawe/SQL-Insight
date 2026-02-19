@@ -22,7 +22,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -106,8 +108,25 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void logout() {
-        log.info("==> 用户 {} 请求退出登录", UserContext.getUserId());
-        redisTemplate.delete(SecurityConstants.REDIS_TOKEN_KEY + UserContext.getUserId());
+        Long userId = UserContext.getUserId();
+        if (userId == null) {
+            return;
+        }
+        log.info("==> 用户 {} 请求退出登录，正在清理缓存...", userId);
+
+        List<String> keys = Arrays.asList(
+                SecurityConstants.REDIS_TOKEN_KEY + userId,
+                SecurityConstants.USER_SYS_PERM_KEY + userId,
+                SecurityConstants.USER_PERMISSION_KEY + userId,
+                SecurityConstants.USER_POLICY_KEY + userId,
+                SecurityConstants.USER_DATASOURCES_KEY + userId
+        );
+
+        redisTemplate.delete(keys);
+
+        UserContext.clear();
+
+        log.info("==> 用户 {} 缓存清理完成，登出成功", userId);
     }
 
     @Override

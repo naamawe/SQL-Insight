@@ -1,6 +1,7 @@
 package com.xhx.core.service.sql.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xhx.core.service.sql.ChatMemoryStore;
 import com.xhx.dal.entity.ChatMessageEntity;
 import com.xhx.dal.mapper.ChatMessageMapper;
@@ -22,26 +23,21 @@ public class ChatMemoryStoreImpl implements ChatMemoryStore {
 
     private final ChatMessageMapper chatMessageMapper;
 
+    /** 每次加载的历史消息条数上限 */
+    private static final int MEMORY_SIZE = 10;
+
     @Override
     public List<ChatMessage> getMessages(Object memoryId) {
         Long sessionId = (Long) memoryId;
-        
-        // 按照顺序读取十条记录
-        List<ChatMessageEntity> entities;
-        try {
-            entities = chatMessageMapper.selectList(
-                    new LambdaQueryWrapper<ChatMessageEntity>()
-                            .eq(ChatMessageEntity::getSessionId, sessionId)
-                            .orderByAsc(ChatMessageEntity::getCreateTime)
-                            .last("LIMIT 10")
-            );
-        } catch (Exception e) {
-            log.error("读取数据库历史记录失败 {}", sessionId, e);
-            throw new RuntimeException("读取数据库历史记录失败", e);
-        }
 
-        // 转化为LangChain4j 的 ChatMessage 对象
-        return entities.stream().map(entity -> {
+        Page<ChatMessageEntity> page = chatMessageMapper.selectPage(
+                new Page<>(1, MEMORY_SIZE),
+                new LambdaQueryWrapper<ChatMessageEntity>()
+                        .eq(ChatMessageEntity::getSessionId, sessionId)
+                        .orderByAsc(ChatMessageEntity::getCreateTime)
+        );
+
+        return page.getRecords().stream().map(entity -> {
             if (ChatMessageType.USER.name().equals(entity.getRole())) {
                 return UserMessage.from(entity.getContent());
             } else {
@@ -60,13 +56,13 @@ public class ChatMemoryStoreImpl implements ChatMemoryStore {
         ChatMessage lastMessage = messages.get(messages.size() - 1);
 
         String content;
-        if (lastMessage instanceof UserMessage) {
-            content = ((UserMessage) lastMessage).contents().stream()
+        if (lastMessage instanceof UserMessage userMsg) {
+            content = userMsg.contents().stream()
                     .filter(c -> c instanceof TextContent)
                     .map(c -> ((TextContent) c).text())
                     .collect(Collectors.joining("\n"));
-        } else if (lastMessage instanceof AiMessage) {
-            content = ((AiMessage) lastMessage).text();
+        } else if (lastMessage instanceof AiMessage aiMsg) {
+            content = aiMsg.text();
         } else {
             content = lastMessage.toString();
         }
@@ -78,7 +74,7 @@ public class ChatMemoryStoreImpl implements ChatMemoryStore {
                 .build();
 
         chatMessageMapper.insert(entity);
-        log.info("会话 {} 保存新消息成功: {}", sessionId, lastMessage.type());
+        log.info("会话 {} 保存新消息: {}", sessionId, lastMessage.type());
     }
 
     @Override

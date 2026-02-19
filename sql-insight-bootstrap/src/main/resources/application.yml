@@ -25,4 +25,5 @@ mybatis-plus:
 security:
   ignore:
     http-urls:
-      - /api/auth/**
+      - /api/auth/login
+      - /api/auth/register

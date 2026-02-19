@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -304,12 +305,17 @@ public class UserServiceImpl implements UserService {
      * 核心安全逻辑：清理 Redis 中该用户的所有相关缓存
      */
     private void kickOutUser(Long userId) {
-        log.info("==> 执行安全清理，用户 ID: {}", userId);
-        // 清理 Token 认证信息
-        redisTemplate.delete(SecurityConstants.REDIS_TOKEN_KEY + userId);
-        // 清理该用户的权限快照（关键：防止 AI 生成 SQL 时引用旧权限）
-        redisTemplate.delete(SecurityConstants.USER_PERMISSION_KEY + userId);
-        // 如果有其他缓存策略同步清理
-        redisTemplate.delete(SecurityConstants.USER_POLICY_KEY + userId);
+        log.info("==> 执行全量安全清理，下线用户 ID: {}", userId);
+
+        List<String> keys = Arrays.asList(
+                SecurityConstants.REDIS_TOKEN_KEY + userId,
+                SecurityConstants.USER_PERMISSION_KEY + userId,
+                SecurityConstants.USER_POLICY_KEY + userId,
+                SecurityConstants.USER_SYS_PERM_KEY + userId,
+                SecurityConstants.USER_DATASOURCES_KEY + userId
+        );
+        redisTemplate.delete(keys);
+
+        log.info("==> 用户 {} 的所有会话及权限缓存已成功销毁", userId);
     }
 }

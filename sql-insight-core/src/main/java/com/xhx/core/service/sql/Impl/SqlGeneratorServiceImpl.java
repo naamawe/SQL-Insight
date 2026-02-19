@@ -4,6 +4,8 @@ import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.xhx.ai.service.SqlAssistant;
 import com.xhx.common.constant.SecurityConstants;
+import com.xhx.common.exception.NotExistException;
+import com.xhx.common.exception.ServiceException;
 import com.xhx.core.service.sql.SchemaCollectorService;
 import com.xhx.core.service.sql.SqlGeneratorService;
 import com.xhx.core.service.sql.SqlSecurityService;
@@ -34,69 +36,62 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
     private final SqlSecurityService sqlSecurityService;
     private final StringRedisTemplate redisTemplate;
 
-    /**
-     * 生成 SQL 的核心逻辑
-     */
     @Override
     public String generate(Long userId, Long sessionId, String question) {
-        // 1. 基础校验：获取会话并确认数据源
         ChatSession session = chatSessionMapper.selectOne(
                 new LambdaQueryWrapper<ChatSession>()
                         .eq(ChatSession::getId, sessionId)
                         .eq(ChatSession::getUserId, userId)
         );
         if (session == null) {
-            throw new RuntimeException("会话不存在或无权访问");
+            throw new NotExistException(404, "会话不存在或无权访问");
         }
 
         Long dataSourceId = session.getDataSourceId();
         DataSource dsConfig = dataSourceMapper.selectById(dataSourceId);
         if (dsConfig == null) {
-            throw new RuntimeException("数据源配置已失效");
+            throw new NotExistException(404, "数据源配置不存在或已被删除");
         }
 
         String permKey = SecurityConstants.USER_PERMISSION_KEY + userId;
         Set<String> allPerms = redisTemplate.opsForSet().members(permKey);
 
         if (CollectionUtils.isEmpty(allPerms)) {
-            return "抱歉，您当前没有任何表的访问权限。";
+            return "抱歉，您当前没有任何表的访问权限，请联系管理员授权。";
         }
 
-        // 过滤出当前数据源下的表名
         List<String> allowedTables = allPerms.stream()
                 .filter(p -> p.startsWith(dataSourceId + ":"))
                 .map(p -> p.split(":")[1])
                 .collect(Collectors.toList());
 
         if (allowedTables.isEmpty()) {
-            return "抱歉，您在该数据源下没有已授权的表。";
+            return "抱歉，您在该数据源下没有已授权的表，请联系管理员配置权限。";
         }
 
         String policyKey = SecurityConstants.USER_POLICY_KEY + userId;
         String policyJson = redisTemplate.opsForValue().get(policyKey);
         QueryPolicy policyEntity = JSON.parseObject(policyJson, QueryPolicy.class);
 
-        // 采集元数据并调用 AI
         String schemaPrompt = schemaCollectorService.fetchPublicSchema(dsConfig, allowedTables);
         String policyPrompt = formatPolicy(policyEntity);
 
-        log.info("用户 {} 发起提问，正在调用 AI 生成 SQL...", userId);
+        log.info("用户 {} 发起提问，调用 AI 生成 SQL...", userId);
         String response = sqlAssistant.chat(sessionId, schemaPrompt, policyPrompt, question);
 
-        // 清理 SQL
         String cleanedSql = cleanSql(response);
 
-        // 安全校验
-        sqlSecurityService.validate(cleanedSql, userId, dataSourceId);
+        try {
+            sqlSecurityService.validate(cleanedSql, userId, dataSourceId);
+        } catch (Exception e) {
+            log.warn("SQL 安全校验未通过，userId={}, reason={}", userId, e.getMessage());
+            throw new ServiceException(400, "SQL 校验未通过: " + e.getMessage());
+        }
 
         log.info("SQL 生成并校验通过: {}", cleanedSql);
         return cleanedSql;
     }
 
-
-    /**
-     * 将策略实体转换为 AI 指令文本
-     */
     private String formatPolicy(QueryPolicy policy) {
         if (policy == null) {
             return "请生成标准的 SQL。";
@@ -120,12 +115,6 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
         return sb.toString();
     }
 
-
-    /**
-     * 清理 SQL
-     * @param response  清理之前的 SQL
-     * @return  清理之后的 SQL
-     */
     private String cleanSql(String response) {
         if (response == null) {
             return "";
