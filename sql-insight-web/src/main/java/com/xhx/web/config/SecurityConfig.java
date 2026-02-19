@@ -2,10 +2,15 @@ package com.xhx.web.config;
 
 import com.xhx.common.IgnoreUrlsConfig;
 import com.xhx.common.constant.SystemPermissionConstants;
+import com.xhx.core.util.JwtUtil;
 import com.xhx.web.filter.JwtAuthenticationFilter;
+import com.xhx.web.filter.MdcLoggingFilter;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.access.expression.method.DefaultMethodSecurityExpressionHandler;
 import org.springframework.security.access.expression.method.MethodSecurityExpressionHandler;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
@@ -28,30 +33,39 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
 import java.util.Collections;
 
 /**
+ * Spring Security 配置
  * @author master
  */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
-    //TODO 需要解决权限问题，当前权限混乱，疑似注解未生效
 
-    private final JwtAuthenticationFilter jwtAuthenticationFilter;
-    private final HandlerExceptionResolver resolver;
+    private final JwtUtil jwtUtil;
+    private final StringRedisTemplate redisTemplate;
     private final IgnoreUrlsConfig ignoreUrlsConfig;
+    private final MdcLoggingFilter mdcLoggingFilter;
+    private final HandlerExceptionResolver resolver;
 
     public SecurityConfig(
-            JwtAuthenticationFilter jwtAuthenticationFilter,
-            @Qualifier("handlerExceptionResolver") HandlerExceptionResolver resolver,
-            IgnoreUrlsConfig ignoreUrlsConfig) {
-        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
-        this.resolver = resolver;
+            JwtUtil jwtUtil,
+            StringRedisTemplate redisTemplate,
+            IgnoreUrlsConfig ignoreUrlsConfig,
+            MdcLoggingFilter mdcLoggingFilter,
+            @Qualifier("handlerExceptionResolver") HandlerExceptionResolver resolver) {
+        this.jwtUtil = jwtUtil;
+        this.redisTemplate = redisTemplate;
         this.ignoreUrlsConfig = ignoreUrlsConfig;
+        this.mdcLoggingFilter = mdcLoggingFilter;
+        this.resolver = resolver;
+    }
+    @Bean
+    public JwtAuthenticationFilter jwtAuthenticationFilter() {
+        return new JwtAuthenticationFilter(jwtUtil, redisTemplate, ignoreUrlsConfig);
     }
 
-
     /**
-     * 定义角色继承关系
+     * 定义角色继承关系：SUPER_ADMIN → ADMIN → USER
      */
     @Bean
     public RoleHierarchy roleHierarchy() {
@@ -62,20 +76,17 @@ public class SecurityConfig {
     }
 
     /**
-     * 关联到方法安全处理器
+     * 将 RoleHierarchy 关联到方法级权限表达式处理器
      */
     @Bean
     static MethodSecurityExpressionHandler methodSecurityExpressionHandler(RoleHierarchy roleHierarchy) {
-        DefaultMethodSecurityExpressionHandler expressionHandler = new DefaultMethodSecurityExpressionHandler();
-        expressionHandler.setRoleHierarchy(roleHierarchy);
-        return expressionHandler;
+        DefaultMethodSecurityExpressionHandler handler = new DefaultMethodSecurityExpressionHandler();
+        handler.setRoleHierarchy(roleHierarchy);
+        return handler;
     }
 
     /**
-     * 配置过滤器链
-     * @param http  HttpSecurity
-     * @return SecurityFilterChain
-     * @throws Exception 异常
+     * Security 过滤器链配置
      */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -89,21 +100,22 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex
-                        // 认证失败（401）
-                        .authenticationEntryPoint((request, response, authException) ->
-                                resolver.resolveException(request, response, null, authException))
-                        // 权限不足（403）
-                        .accessDeniedHandler((request, response, accessDeniedException) ->
-                                resolver.resolveException(request, response, null, accessDeniedException))
+                        .authenticationEntryPoint((request, response, e) ->
+                                resolver.resolveException(request, response, null, e))
+                        .accessDeniedHandler((request, response, e) ->
+                                resolver.resolveException(request, response, null, e))
                 )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 
+    @Bean
+    public FilterRegistrationBean<MdcLoggingFilter> mdcFilterRegistration() {
+        FilterRegistrationBean<MdcLoggingFilter> registration = new FilterRegistrationBean<>(mdcLoggingFilter);
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return registration;
+    }
 
-    /**
-     * 跨域配置源
-     */
     @Bean
     public UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
@@ -117,21 +129,11 @@ public class SecurityConfig {
         return source;
     }
 
-    /**
-     * 密码加密器
-     * @return PasswordEncoder
-     */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    /**
-     * 认证管理器
-     * @param config AuthenticationConfiguration
-     * @return AuthenticationManager
-     * @throws Exception 异常
-     */
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
