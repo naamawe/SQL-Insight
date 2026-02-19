@@ -23,7 +23,7 @@ import static com.xhx.common.constant.SystemPermissionConstants.*;
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('" + USER + "')")
+@PreAuthorize("hasRole('" + USER + "')")
 public class UserController {
 
     private final UserService userService;
@@ -32,7 +32,7 @@ public class UserController {
      * 分页查询用户
      */
     @GetMapping("/page")
-    @PreAuthorize("hasAnyAuthority('" + ADMIN + "')")
+    @PreAuthorize("hasRole('" + ADMIN + "')")
     public Result<Page<UserVO>> getUserPage(
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "10") int size,
@@ -46,7 +46,7 @@ public class UserController {
      * 获取单个用户详情
      */
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('" + ADMIN + "')")
+    @PreAuthorize("hasRole('" + ADMIN + "')")
     public Result<UserVO> getUserById(@PathVariable Long id) {
         return Result.success(userService.getUserById(id));
     }
@@ -64,7 +64,7 @@ public class UserController {
      * 新增用户
      */
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('" + SUPER_ADMIN + "')")
+    @PreAuthorize("hasRole('" + SUPER_ADMIN + "')")
     public Result<Void> saveUser(@RequestBody UserSaveDTO saveDto) {
         userService.saveUser(saveDto);
         return Result.success();
@@ -74,7 +74,7 @@ public class UserController {
      * 修改用户（角色、状态等）
      */
     @PutMapping
-    @PreAuthorize("hasAnyAuthority('" + ADMIN + "')")
+    @PreAuthorize("hasRole('" + ADMIN + "')")
     public Result<Void> updateUser(@RequestBody UserUpdateDTO updateDto) {
         userService.updateUser(updateDto);
         return Result.success();
@@ -94,7 +94,7 @@ public class UserController {
      * 管理员重置他人密码
      */
     @PutMapping("/{id}/password/reset")
-    @PreAuthorize("hasAnyAuthority('" + SUPER_ADMIN + "')")
+    @PreAuthorize("hasRole('" + SUPER_ADMIN + "')")
     public Result<Void> resetPassword(@PathVariable Long id) {
         userService.resetPassword(id);
         return Result.success();
@@ -105,7 +105,7 @@ public class UserController {
      * 权限：仅限 SUPER_ADMIN
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('" + SUPER_ADMIN + "')")
+    @PreAuthorize("hasRole('" + SUPER_ADMIN + "')")
     public Result<Void> deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);
         return Result.success("删除用户成功",null);
@@ -115,7 +115,7 @@ public class UserController {
      * 修改用户的系统权限
      */
     @PutMapping("/{id}/system-permission")
-    @PreAuthorize("hasAuthority('" + SUPER_ADMIN + "')")
+    @PreAuthorize("hasRole('" + SUPER_ADMIN + "')")
     public Result<Void> updateSystemPermission(
             @PathVariable Long id,
             @RequestParam String systemPermission) {

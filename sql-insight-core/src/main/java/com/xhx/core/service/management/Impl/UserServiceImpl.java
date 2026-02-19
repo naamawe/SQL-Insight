@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xhx.common.constant.SecurityConstants;
 import com.xhx.common.constant.SystemPermissionConstants;
 import com.xhx.common.context.UserContext;
+import com.xhx.common.exception.ServiceException;
 import com.xhx.core.model.dto.UserPasswordUpdateDTO;
 import com.xhx.core.model.dto.UserSaveDTO;
 import com.xhx.core.model.dto.UserUpdateDTO;
@@ -92,7 +93,7 @@ public class UserServiceImpl implements UserService {
     public UserVO getUserById(Long userId) {
         User user = userMapper.selectById(userId);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw new ServiceException("用户不存在");
         }
 
         UserVO vo = new UserVO();
@@ -114,7 +115,7 @@ public class UserServiceImpl implements UserService {
         Long count = userMapper.selectCount(new LambdaQueryWrapper<User>()
                 .eq(User::getUserName, saveDto.getUserName()));
         if (count > 0) {
-            throw new RuntimeException("用户名已存在");
+            throw new ServiceException("用户名已存在");
         }
 
         // 转换并加密
@@ -138,11 +139,11 @@ public class UserServiceImpl implements UserService {
     public void updateUser(UserUpdateDTO updateDto) {
         User oldUser = userMapper.selectById(updateDto.getId());
         if (oldUser == null) {
-            throw new RuntimeException("用户不存在");
+            throw new ServiceException("用户不存在");
         }
 
         if ("admin".equals(oldUser.getUserName()) && updateDto.getStatus() == 0) {
-            throw new RuntimeException("系统核心管理员不可禁用");
+            throw new ServiceException("系统核心管理员不可禁用");
         }
 
         boolean needKickOut = !oldUser.getRoleId().equals(updateDto.getRoleId())
@@ -177,7 +178,7 @@ public class UserServiceImpl implements UserService {
             );
 
             if (superAdminCount <= 1) {
-                throw new RuntimeException("系统安全限制：不能删除唯一的超级管理员");
+                throw new ServiceException("系统安全限制：不能删除唯一的超级管理员");
             }
         }
 
@@ -207,17 +208,17 @@ public class UserServiceImpl implements UserService {
         // 获取用户信息
         User user = userMapper.selectById(userId);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw new ServiceException("用户不存在");
         }
 
         // 校验原密码是否正确
         if (!passwordEncoder.matches(passwordDto.getOldPassword(), user.getPassword())) {
-            throw new RuntimeException("原密码错误，请重新输入");
+            throw new ServiceException("原密码错误，请重新输入");
         }
 
         // 校验两次新密码是否一致（前端通常会做，后端必须双重校验）
         if (!passwordDto.getNewPassword().equals(passwordDto.getConfirmPassword())) {
-            throw new RuntimeException("两次输入的新密码不一致");
+            throw new ServiceException("两次输入的新密码不一致");
         }
 
         // 加密新密码并保存
@@ -237,7 +238,7 @@ public class UserServiceImpl implements UserService {
     public void resetPassword(Long userId) {
         User user = userMapper.selectById(userId);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw new ServiceException("用户不存在");
         }
 
         user.setPassword(passwordEncoder.encode(defaultPassword));
@@ -252,26 +253,26 @@ public class UserServiceImpl implements UserService {
     public void updateSystemPermission(Long userId, String systemPermission) {
         Long currentUserId = UserContext.getUserId();
         if (userId.equals(currentUserId)) {
-            throw new RuntimeException("不能修改自己的系统权限");
+            throw new ServiceException("不能修改自己的系统权限");
         }
 
         User targetUser = userMapper.selectById(userId);
         if (targetUser == null) {
-            throw new RuntimeException("用户不存在");
+            throw new ServiceException("用户不存在");
         }
 
         // 校验权限值合法性
         if (!SystemPermissionConstants.SUPER_ADMIN.equals(systemPermission)
                 && !SystemPermissionConstants.ADMIN.equals(systemPermission)
                 && !SystemPermissionConstants.USER.equals(systemPermission)) {
-            throw new RuntimeException("非法的系统权限值");
+            throw new ServiceException("非法的系统权限值");
         }
 
 
         // 禁止授予 SUPER_ADMIN 权限
         if (SystemPermissionConstants.SUPER_ADMIN.equals(systemPermission)) {
             log.warn("拒绝操作：超级管理员权限不可授予，目标用户: {}", targetUser.getUserName());
-            throw new RuntimeException("系统安全限制：超级管理员权限不可授予他人");
+            throw new ServiceException("系统安全限制：超级管理员权限不可授予他人");
         }
 
         // 保护唯一超管
@@ -284,7 +285,7 @@ public class UserServiceImpl implements UserService {
 
             if (superAdminCount <= 1) {
                 log.warn("拒绝操作：不能降低系统唯一超级管理员的权限，目标用户: {}", targetUser.getUserName());
-                throw new RuntimeException("系统安全限制：不能降低系统唯一超级管理员的权限");
+                throw new ServiceException("系统安全限制：不能降低系统唯一超级管理员的权限");
             }
         }
 

@@ -19,7 +19,7 @@ import static com.xhx.common.constant.SystemPermissionConstants.ADMIN;
 @RestController
 @RequestMapping("/api/role-permissions")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('" + ADMIN + "')")
+@PreAuthorize("hasRole('" + ADMIN + "')")
 public class RolePermissionController {
 
     private final RolePermissionService rolePermissionService;

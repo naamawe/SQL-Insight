@@ -14,7 +14,6 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -47,18 +46,16 @@ public class UserDetailsServiceImpl implements UserDetailsService {
             sysPerm = SystemPermissionConstants.USER;
         }
 
-        // 构建 Authority 集合
-        List<SimpleGrantedAuthority> authorities = new ArrayList<>();
-        authorities.add(new SimpleGrantedAuthority(sysPerm.toUpperCase()));
+        String roleAuthority = "ROLE_" + sysPerm.toUpperCase();
 
-        log.info("用户 {} 登录，系统权限: {}", username, sysPerm);
+        log.info("用户 {} 登录，系统权限: {}", username, roleAuthority);
 
         return new LoginUser(
                 user.getId(),
                 user.getRoleId(),
                 user.getUserName(),
                 user.getPassword(),
-                authorities
+                List.of(new SimpleGrantedAuthority(roleAuthority))
         );
     }
 }

@@ -17,6 +17,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,21 +54,23 @@ public class AuthServiceImpl implements AuthService {
         Long userId = loginUser.getUserId();
         Long roleId = loginUser.getRoleId();
 
-        String systemPerm = loginUser.getAuthorities().iterator().next().getAuthority();
+        String roleAuthority = loginUser.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .findFirst()
+                .orElseThrow();
 
         redisTemplate.opsForValue().set(
                 SecurityConstants.USER_SYS_PERM_KEY + userId,
-                systemPerm,
+                roleAuthority,
                 24, TimeUnit.HOURS
         );
 
         rolePermissionService.refreshUserPermissionsCache(userId, roleId);
 
         String token = jwtUtil.createToken(userId, loginUser.getUsername());
+        redisTemplate.opsForValue().set(SecurityConstants.REDIS_TOKEN_KEY + userId, token, 24, TimeUnit.HOURS);
 
-        redisTemplate.opsForValue().set("login:token:" + userId, token, 24, TimeUnit.HOURS);
-
-        log.info("==> 用户 {} 登录成功，权限快照已存入 Redis", loginUser.getUsername());
+        log.info("==> 用户 {} 登录成功，权限快照已存入 Redis: {}", loginUser.getUsername(), roleAuthority);
         return token;
     }
 
@@ -104,8 +107,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public void logout() {
         log.info("==> 用户 {} 请求退出登录", UserContext.getUserId());
-        String redisKey = SecurityConstants.REDIS_TOKEN_KEY + UserContext.getUserId();
-        redisTemplate.delete(redisKey);
+        redisTemplate.delete(SecurityConstants.REDIS_TOKEN_KEY + UserContext.getUserId());
     }
 
     @Override

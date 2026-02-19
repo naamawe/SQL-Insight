@@ -1,6 +1,8 @@
 package com.xhx.core.service.management;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.xhx.core.model.dto.RoleSaveDTO;
+import com.xhx.core.model.dto.RoleUpdateDTO;
 import com.xhx.dal.entity.Role;
 
 /**
@@ -12,12 +14,12 @@ public interface RoleService extends IService<Role> {
     /**
      * 创建角色
      */
-    Long createRole(Role role);
+    Long createRole(RoleSaveDTO saveDTO);
 
     /**
      * 更新角色
      */
-    void updateRole(Role role);
+    void updateRole(RoleUpdateDTO updateDTO);
 
     /**
      * 删除角色（级联检查）

@@ -1,8 +1,11 @@
 package com.xhx.web.controller;
 
 import com.xhx.common.result.Result;
+import com.xhx.core.model.dto.RoleSaveDTO;
+import com.xhx.core.model.dto.RoleUpdateDTO;
 import com.xhx.core.service.management.RoleService;
 import com.xhx.dal.entity.Role;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -19,9 +22,8 @@ import static com.xhx.common.constant.SystemPermissionConstants.SUPER_ADMIN;
 @RestController
 @RequestMapping("/api/roles")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('" + ADMIN + "')")
+@PreAuthorize("hasRole('" + ADMIN + "')")
 public class RoleController {
-    // TODO 需要把role实体类改为dto包装类
 
     private final RoleService roleService;
 
@@ -49,9 +51,9 @@ public class RoleController {
      * 创建新角色
      */
     @PostMapping
-    @PreAuthorize("hasAuthority('" + SUPER_ADMIN + "')")
-    public Result<Long> addRole(@RequestBody Role role) {
-        Long roleId = roleService.createRole(role);
+    @PreAuthorize("hasRole('" + SUPER_ADMIN + "')")
+    public Result<Long> addRole(@Valid @RequestBody RoleSaveDTO saveDTO) {
+        Long roleId = roleService.createRole(saveDTO);
         return Result.success("角色创建成功", roleId);
     }
 
@@ -59,9 +61,9 @@ public class RoleController {
      * 修改角色信息
      */
     @PutMapping
-    @PreAuthorize("hasAuthority('" + SUPER_ADMIN + "')")
-    public Result<Void> updateRole(@RequestBody Role role) {
-        roleService.updateRole(role);
+    @PreAuthorize("hasRole('" + SUPER_ADMIN + "')")
+    public Result<Void> updateRole(@Valid @RequestBody RoleUpdateDTO updateDTO) {
+        roleService.updateRole(updateDTO);
         return Result.success("角色更新成功", null);
     }
 
@@ -69,7 +71,7 @@ public class RoleController {
      * 删除角色
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('" + SUPER_ADMIN + "')")
+    @PreAuthorize("hasRole('" + SUPER_ADMIN + "')")
     public Result<Void> deleteRole(@PathVariable Long id) {
         roleService.deleteRole(id);
         return Result.success("角色删除成功", null);

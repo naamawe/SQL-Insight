@@ -23,7 +23,7 @@ import static com.xhx.common.constant.SystemPermissionConstants.*;
 @RestController
 @RequestMapping("/api/data-sources")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('" + ADMIN + "')")
+@PreAuthorize("hasRole('" + ADMIN + "')")
 public class DataSourceController {
 
     private final DataSourceService dataSourceService;
@@ -112,7 +112,7 @@ public class DataSourceController {
      * 获取当前用户有权访问的数据源列表
      */
     @GetMapping("/my")
-    @PreAuthorize("hasAuthority('" + USER + "')")
+    @PreAuthorize("hasRole('" + USER + "')")
     public Result<List<DataSourceVO>> getMyDataSources() {
         Long userId = UserContext.getUserId();
         return Result.success(dataSourceService.getMyDataSources(userId));
@@ -123,7 +123,7 @@ public class DataSourceController {
      * （用于验证权限 + 显示详情）
      */
     @GetMapping("/my/{id}")
-    @PreAuthorize("hasAuthority('" + USER + "')")
+    @PreAuthorize("hasRole('" + USER + "')")
     public Result<DataSourceVO> getMyDataSourceById(@PathVariable Long id) {
         Long userId = UserContext.getUserId();
         List<DataSourceVO> myDataSources = dataSourceService.getMyDataSources(userId);

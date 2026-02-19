@@ -16,7 +16,7 @@ import static com.xhx.common.constant.SystemPermissionConstants.ADMIN;
 @RestController
 @RequestMapping("/api/query-policies")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('" + ADMIN + "')")
+@PreAuthorize("hasRole('" + ADMIN + "')")
 public class QueryPolicyController {
 
     private final QueryPolicyService queryPolicyService;

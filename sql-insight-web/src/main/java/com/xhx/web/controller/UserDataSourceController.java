@@ -19,7 +19,7 @@ import static com.xhx.common.constant.SystemPermissionConstants.USER;
 @RestController
 @RequestMapping("/api/user-authorizations")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('" + USER + "')")
+@PreAuthorize("hasRole('" + USER + "')")
 public class UserDataSourceController {
 
     private final UserDataSourceService userDataSourceService;
@@ -29,7 +29,7 @@ public class UserDataSourceController {
      * * @param userId 用户 ID
      */
     @GetMapping("/{userId}")
-    @PreAuthorize("hasAuthority('" + ADMIN + "')")
+    @PreAuthorize("hasRole('" + ADMIN + "')")
     public Result<List<Long>> getAuthorizedIds(@PathVariable Long userId) {
         return Result.success(userDataSourceService.getAuthorizedDataSourceIds(userId));
     }
@@ -50,7 +50,7 @@ public class UserDataSourceController {
      * @param dataSourceIds 新的数据源 ID 集合
      */
     @PostMapping("/{userId}")
-    @PreAuthorize("hasAuthority('" + ADMIN + "')")
+    @PreAuthorize("hasRole('" + ADMIN + "')")
     public Result<Void> assign(@PathVariable Long userId, @RequestBody List<Long> dataSourceIds) {
         userDataSourceService.assignDataSources(userId, dataSourceIds);
         return Result.success();

@@ -26,7 +26,7 @@ import static com.xhx.common.constant.SystemPermissionConstants.USER;
 @RestController
 @RequestMapping("/api/ai")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('" + USER + "')")
+@PreAuthorize("hasRole('" + USER + "')")
 public class SqlChatController {
 
     private final SqlGeneratorService sqlGeneratorService;
