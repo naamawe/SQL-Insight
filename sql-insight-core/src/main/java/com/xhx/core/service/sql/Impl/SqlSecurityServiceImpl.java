@@ -63,7 +63,7 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
      */
     private void checkPolicy(Long userId, String sql) {
         String policyJson = cacheService.getUserPolicy(userId);
-        if (policyJson == null) {
+        if (policyJson == null || "NO_POLICY".equals(policyJson)) {
             return;
         }
 

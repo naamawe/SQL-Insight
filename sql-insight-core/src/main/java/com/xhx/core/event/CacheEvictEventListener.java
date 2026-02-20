@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.cache.PermissionLoader;
 import com.xhx.dal.entity.User;
+import com.xhx.dal.mapper.UserDataSourceMapper;
 import com.xhx.dal.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,7 @@ public class CacheEvictEventListener {
     private final UserMapper userMapper;
     private final PermissionLoader permissionLoader;
     private final CacheService cacheService;
+    private final UserDataSourceMapper userDataSourceMapper;
 
     /**
      * 角色权限变更 → 失效该角色下所有用户的权限缓存
@@ -64,11 +66,11 @@ public class CacheEvictEventListener {
     @Async
     @EventListener
     public void onDataSourceDeleted(DataSourceDeletedEvent event) {
-        try {
-            cacheService.evictDsTables(event.getDataSourceId());
-            log.info("数据源 {} 表名缓存已失效", event.getDataSourceId());
-        } catch (Exception e) {
-            log.error("数据源 {} 表名缓存失效失败", event.getDataSourceId(), e);
-        }
+        Long dsId = event.getDataSourceId();
+        cacheService.evictDsTables(dsId);
+
+        // 同时失效有该数据源权限的用户缓存
+        List<Long> userIds = userDataSourceMapper.selectUserIdsByDataSourceId(dsId);
+        userIds.forEach(permissionLoader::evict);
     }
 }
