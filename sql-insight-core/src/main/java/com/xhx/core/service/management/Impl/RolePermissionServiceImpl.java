@@ -30,7 +30,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class RolePermissionServiceImpl extends ServiceImpl<TablePermissionMapper, TablePermission> implements RolePermissionService {
 
-    private final UserMapper userMapper;
     private final RoleMapper roleMapper;
     private final DataSourceService dataSourceService;
     private final DataSourceMapper dataSourceMapper;
@@ -91,18 +90,6 @@ public class RolePermissionServiceImpl extends ServiceImpl<TablePermissionMapper
                     }
                 }
         );
-    }
-
-    private void syncRedisCacheForRole(Long roleId) {
-        List<User> users = userMapper.selectList(
-                new LambdaQueryWrapper<User>().select(User::getId).eq(User::getRoleId, roleId)
-        );
-        if (CollectionUtils.isEmpty(users)) {
-            return;
-        }
-
-        log.info("==> 权限变更事务提交，同步刷新角色 {} 关联的 {} 个用户缓存", roleId, users.size());
-        users.forEach(user -> refreshUserPermissionsCache(user.getId(), roleId));
     }
 
     @Override

@@ -129,6 +129,8 @@ public class PermissionLoader {
         cacheService.putUserPermissions(userId, permSet);
         if (policy != null) {
             cacheService.putUserPolicy(userId, JSON.toJSONString(policy));
+        } else {
+            cacheService.putUserPolicy(userId, NO_POLICY_SENTINEL);
         }
 
         return permSet;
