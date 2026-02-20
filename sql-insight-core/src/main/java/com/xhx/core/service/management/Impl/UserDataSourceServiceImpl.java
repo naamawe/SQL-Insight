@@ -2,18 +2,16 @@ package com.xhx.core.service.management.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.xhx.common.constant.SecurityConstants;
+import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.management.UserDataSourceService;
 import com.xhx.dal.entity.UserDataSource;
 import com.xhx.dal.mapper.UserDataSourceMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * @author master
@@ -23,39 +21,47 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserDataSourceServiceImpl extends ServiceImpl<UserDataSourceMapper, UserDataSource> implements UserDataSourceService {
 
-    private final StringRedisTemplate redisTemplate;
+    private final CacheService cacheService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void assignDataSources(Long userId, List<Long> dataSourceIds) {
-        // 清空旧权限
-        this.remove(new LambdaQueryWrapper<UserDataSource>().eq(UserDataSource::getUserId, userId));
+        this.remove(new LambdaQueryWrapper<UserDataSource>()
+                .eq(UserDataSource::getUserId, userId));
 
-        // 插入新权限
         if (dataSourceIds != null && !dataSourceIds.isEmpty()) {
             List<UserDataSource> list = dataSourceIds.stream().map(dsId -> {
                 UserDataSource uds = new UserDataSource();
                 uds.setUserId(userId);
                 uds.setDataSourceId(dsId);
                 return uds;
-            }).collect(Collectors.toList());
+            }).toList();
             this.saveBatch(list);
         }
 
-        // 清理数据源 ID 列表缓存
-        redisTemplate.delete(SecurityConstants.USER_DATASOURCES_KEY + userId);
-        redisTemplate.delete(SecurityConstants.USER_PERMISSION_KEY + userId);
-
-        log.info("==> 用户 {} 权限变更，已清理 Redis 缓存 Key: {}{}",
-                userId, SecurityConstants.USER_DATASOURCES_KEY, userId);
+        // 失效缓存（同时失效权限，因为数据源变了权限集合也要重新加载）
+        cacheService.evictUserDsIds(userId);
+        cacheService.evictUserPermissions(userId);
+        log.info("用户 {} 数据源授权已变更，相关缓存已失效", userId);
     }
 
     @Override
     public List<Long> getAuthorizedDataSourceIds(Long userId) {
-        return this.list(new LambdaQueryWrapper<UserDataSource>()
-                .eq(UserDataSource::getUserId, userId))
+        // 查缓存
+        List<Long> cached = cacheService.getUserDsIds(userId);
+        if (cached != null) {
+            return cached;
+        }
+
+        // 查DB
+        List<Long> ids = this.list(new LambdaQueryWrapper<UserDataSource>()
+                        .eq(UserDataSource::getUserId, userId))
                 .stream()
                 .map(UserDataSource::getDataSourceId)
-                .collect(Collectors.toList());
+                .toList();
+
+        // 回填
+        cacheService.putUserDsIds(userId, ids);
+        return ids;
     }
 }

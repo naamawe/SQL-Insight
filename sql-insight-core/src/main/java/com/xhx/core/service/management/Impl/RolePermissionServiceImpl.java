@@ -1,17 +1,17 @@
 package com.xhx.core.service.management.Impl;
 
-import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.xhx.common.constant.SecurityConstants;
 import com.xhx.common.exception.ServiceException;
+import com.xhx.core.event.RolePermissionChangedEvent;
+import com.xhx.core.service.cache.PermissionLoader;
 import com.xhx.core.service.management.DataSourceService;
 import com.xhx.core.service.management.RolePermissionService;
 import com.xhx.dal.entity.*;
 import com.xhx.dal.mapper.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -19,7 +19,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.util.CollectionUtils;
 
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -32,11 +31,12 @@ import java.util.stream.Collectors;
 public class RolePermissionServiceImpl extends ServiceImpl<TablePermissionMapper, TablePermission> implements RolePermissionService {
 
     private final UserMapper userMapper;
-    private final QueryPolicyMapper queryPolicyMapper;
-    private final StringRedisTemplate redisTemplate;
     private final RoleMapper roleMapper;
     private final DataSourceService dataSourceService;
     private final DataSourceMapper dataSourceMapper;
+    private final ApplicationEventPublisher eventPublisher;
+    private final PermissionLoader permissionLoader;
+
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -69,7 +69,6 @@ public class RolePermissionServiceImpl extends ServiceImpl<TablePermissionMapper
                 .eq(TablePermission::getRoleId, roleId)
                 .eq(TablePermission::getDataSourceId, dataSourceId));
 
-
         if (!CollectionUtils.isEmpty(tableNames)) {
             List<TablePermission> permissions = tableNames.stream().map(name -> {
                 TablePermission tp = new TablePermission();
@@ -82,16 +81,16 @@ public class RolePermissionServiceImpl extends ServiceImpl<TablePermissionMapper
             this.saveBatch(permissions);
         }
 
-        if (TransactionSynchronizationManager.isActualTransactionActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    syncRedisCacheForRole(roleId);
+        // 事务提交后发布事件（异步失效缓存，不阻塞当前事务）
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        eventPublisher.publishEvent(
+                                new RolePermissionChangedEvent(this, roleId));
+                    }
                 }
-            });
-        } else {
-            syncRedisCacheForRole(roleId);
-        }
+        );
     }
 
     private void syncRedisCacheForRole(Long roleId) {
@@ -108,33 +107,8 @@ public class RolePermissionServiceImpl extends ServiceImpl<TablePermissionMapper
 
     @Override
     public void refreshUserPermissionsCache(Long userId, Long roleId) {
-        String permKey = SecurityConstants.USER_PERMISSION_KEY + userId;
-        String policyKey = SecurityConstants.USER_POLICY_KEY + userId;
-
-        // 加载最新数据
-        List<TablePermission> perms = this.baseMapper.selectList(
-                new LambdaQueryWrapper<TablePermission>().eq(TablePermission::getRoleId, roleId));
-        QueryPolicy policy = queryPolicyMapper.selectOne(
-                new LambdaQueryWrapper<QueryPolicy>().eq(QueryPolicy::getRoleId, roleId));
-
-        // 刷新表权限：采用先删后增，确保无残留旧权限
-        redisTemplate.delete(permKey);
-        if (!CollectionUtils.isEmpty(perms)) {
-            String[] permStrings = perms.stream()
-                    .map(p -> p.getDataSourceId() + ":" + p.getTableName() + ":" + p.getPermission())
-                    .toArray(String[]::new);
-            redisTemplate.opsForSet().add(permKey, permStrings);
-            // 24小时过期，增加1-60分钟随机偏移防止雪崩
-            long expireMinutes = 1440 + (long) (Math.random() * 60);
-            redisTemplate.expire(permKey, expireMinutes, TimeUnit.MINUTES);
-        }
-
-        // 刷新策略
-        if (policy != null) {
-            redisTemplate.opsForValue().set(policyKey, JSON.toJSONString(policy), 25, TimeUnit.HOURS);
-        } else {
-            redisTemplate.delete(policyKey);
-        }
+        // 兼容旧调用，委托给 PermissionLoader
+        permissionLoader.doLoadFromDb(userId, roleId);
     }
 
     @Override

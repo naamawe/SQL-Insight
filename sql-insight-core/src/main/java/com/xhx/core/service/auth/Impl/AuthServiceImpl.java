@@ -1,19 +1,17 @@
 package com.xhx.core.service.auth.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.xhx.common.constant.SecurityConstants;
 import com.xhx.common.constant.SystemPermissionConstants;
 import com.xhx.common.context.UserContext;
 import com.xhx.core.model.LoginUser;
 import com.xhx.core.model.dto.LoginDTO;
-import com.xhx.core.service.management.RolePermissionService;
+import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.auth.AuthService;
 import com.xhx.core.util.JwtUtil;
 import com.xhx.dal.entity.User;
 import com.xhx.dal.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -22,11 +20,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 /**
  * @author master
@@ -40,19 +35,18 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtUtil jwtUtil;
-    private final StringRedisTemplate redisTemplate;
-    private final RolePermissionService rolePermissionService;
+    private final CacheService cacheService;
 
     @Override
     public String login(LoginDTO loginDto) {
-        log.info("==> 用户 {} 尝试登录", loginDto.getUsername());
+        log.info("用户 {} 尝试登录", loginDto.getUsername());
 
         Authentication auth = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(loginDto.getUsername(), loginDto.getPassword())
+                new UsernamePasswordAuthenticationToken(
+                        loginDto.getUsername(), loginDto.getPassword())
         );
 
         LoginUser loginUser = (LoginUser) auth.getPrincipal();
-
         Long userId = loginUser.getUserId();
         Long roleId = loginUser.getRoleId();
 
@@ -61,18 +55,15 @@ public class AuthServiceImpl implements AuthService {
                 .findFirst()
                 .orElseThrow();
 
-        redisTemplate.opsForValue().set(
-                SecurityConstants.USER_SYS_PERM_KEY + userId,
-                roleAuthority,
-                24, TimeUnit.HOURS
-        );
-
-        rolePermissionService.refreshUserPermissionsCache(userId, roleId);
-
+        // 生成 Token
         String token = jwtUtil.createToken(userId, loginUser.getUsername());
-        redisTemplate.opsForValue().set(SecurityConstants.REDIS_TOKEN_KEY + userId, token, 24, TimeUnit.HOURS);
 
-        log.info("==> 用户 {} 登录成功，权限快照已存入 Redis: {}", loginUser.getUsername(), roleAuthority);
+        // 一次性写入所有登录态缓存
+        cacheService.putToken(userId, token);
+        cacheService.putUserSysPerm(userId, roleAuthority);
+        cacheService.putUserRoleId(userId, roleId);
+
+        log.info("用户 {} 登录成功", loginUser.getUsername());
         return token;
     }
 
@@ -112,21 +103,10 @@ public class AuthServiceImpl implements AuthService {
         if (userId == null) {
             return;
         }
-        log.info("==> 用户 {} 请求退出登录，正在清理缓存...", userId);
 
-        List<String> keys = Arrays.asList(
-                SecurityConstants.REDIS_TOKEN_KEY + userId,
-                SecurityConstants.USER_SYS_PERM_KEY + userId,
-                SecurityConstants.USER_PERMISSION_KEY + userId,
-                SecurityConstants.USER_POLICY_KEY + userId,
-                SecurityConstants.USER_DATASOURCES_KEY + userId
-        );
-
-        redisTemplate.delete(keys);
-
+        cacheService.evictAllUserCache(userId);
         UserContext.clear();
-
-        log.info("==> 用户 {} 缓存清理完成，登出成功", userId);
+        log.info("用户 {} 已登出", userId);
     }
 
     @Override

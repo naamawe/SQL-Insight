@@ -137,4 +137,13 @@ public class DataSourceController {
 
         return Result.success(target);
     }
+
+    /**
+     * 手动刷新数据源表名缓存
+     * 当目标库结构发生变更（新增/删除表）后，管理员主动调用此接口
+     */
+    @PostMapping("/admin/{id}/tables/refresh")
+    public Result<List<String>> refreshTables(@PathVariable Long id) {
+        return Result.success(dataSourceService.refreshTableNames(id));
+    }
 }

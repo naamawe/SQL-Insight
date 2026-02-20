@@ -2,6 +2,7 @@ package com.xhx.web.config;
 
 import com.xhx.common.IgnoreUrlsConfig;
 import com.xhx.common.constant.SystemPermissionConstants;
+import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.util.JwtUtil;
 import com.xhx.web.filter.JwtAuthenticationFilter;
 import com.xhx.web.filter.MdcLoggingFilter;
@@ -10,7 +11,6 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.access.expression.method.DefaultMethodSecurityExpressionHandler;
 import org.springframework.security.access.expression.method.MethodSecurityExpressionHandler;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
@@ -42,26 +42,27 @@ import java.util.Collections;
 public class SecurityConfig {
 
     private final JwtUtil jwtUtil;
-    private final StringRedisTemplate redisTemplate;
+    private final CacheService cacheService;
     private final IgnoreUrlsConfig ignoreUrlsConfig;
     private final MdcLoggingFilter mdcLoggingFilter;
     private final HandlerExceptionResolver resolver;
 
     public SecurityConfig(
             JwtUtil jwtUtil,
-            StringRedisTemplate redisTemplate,
+            CacheService cacheService,
             IgnoreUrlsConfig ignoreUrlsConfig,
             MdcLoggingFilter mdcLoggingFilter,
             @Qualifier("handlerExceptionResolver") HandlerExceptionResolver resolver) {
         this.jwtUtil = jwtUtil;
-        this.redisTemplate = redisTemplate;
+        this.cacheService = cacheService;
         this.ignoreUrlsConfig = ignoreUrlsConfig;
         this.mdcLoggingFilter = mdcLoggingFilter;
         this.resolver = resolver;
     }
+
     @Bean
     public JwtAuthenticationFilter jwtAuthenticationFilter() {
-        return new JwtAuthenticationFilter(jwtUtil, redisTemplate, ignoreUrlsConfig);
+        return new JwtAuthenticationFilter(jwtUtil, ignoreUrlsConfig, cacheService);
     }
 
     /**
@@ -94,7 +95,8 @@ public class SecurityConfig {
         return http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(urls).permitAll()
                         .anyRequest().authenticated()
@@ -105,13 +107,15 @@ public class SecurityConfig {
                         .accessDeniedHandler((request, response, e) ->
                                 resolver.resolveException(request, response, null, e))
                 )
-                .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(jwtAuthenticationFilter(),
+                        UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 
     @Bean
     public FilterRegistrationBean<MdcLoggingFilter> mdcFilterRegistration() {
-        FilterRegistrationBean<MdcLoggingFilter> registration = new FilterRegistrationBean<>(mdcLoggingFilter);
+        FilterRegistrationBean<MdcLoggingFilter> registration =
+                new FilterRegistrationBean<>(mdcLoggingFilter);
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return registration;
     }
@@ -135,7 +139,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
+    public AuthenticationManager authenticationManager(
+            AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
     }
 }

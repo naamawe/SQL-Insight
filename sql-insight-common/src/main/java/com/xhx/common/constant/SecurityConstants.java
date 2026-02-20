@@ -1,34 +1,59 @@
 package com.xhx.common.constant;
 
 /**
- * 安全相关常量
  * @author master
  */
 public class SecurityConstants {
-    /** Token 前缀 */
-    public static final String TOKEN_PREFIX = "Bearer ";
-    
-    /** 认证请求头 */
-    public static final String AUTHORIZATION_HEADER = "Authorization";
 
-    /** Redis 存储 Token 的 Key 前缀 (login:token:userId) */
-    public static final String REDIS_TOKEN_KEY = "login:token:";
+    // ==================== Token ====================
+    /** login:token:{userId} */
+    public static final String TOKEN_KEY = "login:token:";
 
-    /** Token 有效期（单位：分钟）- 建议 30 分钟，配合续期逻辑 */
-    public static final long TOKEN_EXPIRE_MINUTES = 30;
+    // ==================== 用户基础信息 ====================
+    /** user:role_id:{userId}  →  String: roleId */
+    public static final String USER_ROLE_ID_KEY = "user:role_id:";
 
-    /** 续期阈值（单位：分钟）- 当剩余时间少于 10 分钟时，触发自动续期 */
-    public static final long TOKEN_RENEW_THRESHOLD = 10;
-
-    /** 存放用户表权限的 Redis Key (Set类型: datasourceId:tableName:permission) */
-    public static final String USER_PERMISSION_KEY = "user:permissions:";
-
-    /** 存放用户查询策略的 Redis Key (Value类型: JSON字符串) */
-    public static final String USER_POLICY_KEY = "user:policy:";
-
-    /** 存放用户系统权限的 Redis Key (Set类型: permission) */
+    /** user:sys_perm:{userId}  →  String: ROLE_ADMIN 等 */
     public static final String USER_SYS_PERM_KEY = "user:sys_perm:";
 
-    /** 存放用户已授权数据源 ID 的 Redis Key (List/Set类型) */
-    public static final String USER_DATASOURCES_KEY = "user:datasources:";
+    // ==================== 权限体系 ====================
+    /** user:perm:mark:{userId}  →  String: "1"（标记权限已加载，解决空集合判断问题） */
+    public static final String USER_PERM_MARK_KEY = "user:perm:mark:";
+
+    /** user:perm:set:{userId}   →  Set: {dsId}:{tableName}:SELECT */
+    public static final String USER_PERM_SET_KEY = "user:perm:set:";
+
+    /** user:policy:{userId}     →  String: QueryPolicy JSON */
+    public static final String USER_POLICY_KEY = "user:policy:";
+
+    /** user:ds_ids:{userId}     →  String: [1,2,3] JSON */
+    public static final String USER_DS_IDS_KEY = "user:ds_ids:";
+
+    // ==================== 数据源元数据 ====================
+    /** ds:tables:{dataSourceId} →  String: ["t1","t2"] JSON */
+    public static final String DS_TABLES_KEY = "ds:tables:";
+
+    // ==================== 分布式锁 ====================
+    /** lock:perm:load:{userId} */
+    public static final String LOCK_PERM_LOAD_KEY = "lock:perm:load:";
+
+    // ==================== 兼容旧代码（过渡期保留，重构完删除） ====================
+    /** @deprecated use TOKEN_KEY */
+    @Deprecated
+    public static final String REDIS_TOKEN_KEY = TOKEN_KEY;
+    /** @deprecated use USER_PERM_SET_KEY */
+    @Deprecated
+    public static final String USER_PERMISSION_KEY = USER_PERM_SET_KEY;
+    /** @deprecated use USER_DS_IDS_KEY */
+    @Deprecated
+    public static final String USER_DATASOURCES_KEY = USER_DS_IDS_KEY;
+
+    // ==================== TTL ====================
+    public static final long TOKEN_TTL_HOURS = 24;
+    public static final long PERM_TTL_BASE_MINUTES = 1440;
+    public static final long PERM_TTL_RANDOM_MINUTES = 60;
+    public static final long DS_TABLES_TTL_MINUTES = 10;
+    public static final long LOCK_TTL_SECONDS = 5;
+    public static final long TOKEN_RENEW_THRESHOLD_MINUTES = 10;
+    public static final long TOKEN_EXPIRE_MINUTES = 30;
 }

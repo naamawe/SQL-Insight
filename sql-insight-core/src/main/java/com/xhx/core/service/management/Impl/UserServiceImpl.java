@@ -2,7 +2,6 @@ package com.xhx.core.service.management.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.xhx.common.constant.SecurityConstants;
 import com.xhx.common.constant.SystemPermissionConstants;
 import com.xhx.common.context.UserContext;
 import com.xhx.common.exception.ServiceException;
@@ -10,6 +9,7 @@ import com.xhx.core.model.dto.UserPasswordUpdateDTO;
 import com.xhx.core.model.dto.UserSaveDTO;
 import com.xhx.core.model.dto.UserUpdateDTO;
 import com.xhx.core.model.vo.UserVO;
+import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.management.UserService;
 import com.xhx.dal.entity.Role;
 import com.xhx.dal.entity.User;
@@ -21,13 +21,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -45,7 +43,7 @@ public class UserServiceImpl implements UserService {
     private final RoleMapper roleMapper;
     private final UserDataSourceMapper userDataSourceMapper;
     private final PasswordEncoder passwordEncoder;
-    private final StringRedisTemplate redisTemplate;
+    private final CacheService cacheService;
 
     @Value("${defaultPassword}")
     private String defaultPassword;
@@ -301,21 +299,9 @@ public class UserServiceImpl implements UserService {
                 targetUser.getUserName(), oldPermission, systemPermission);
     }
 
-    /**
-     * 核心安全逻辑：清理 Redis 中该用户的所有相关缓存
-     */
+    // 删除所有散落的 redisTemplate.delete() 调用，统一走 CacheService
     private void kickOutUser(Long userId) {
-        log.info("==> 执行全量安全清理，下线用户 ID: {}", userId);
-
-        List<String> keys = Arrays.asList(
-                SecurityConstants.REDIS_TOKEN_KEY + userId,
-                SecurityConstants.USER_PERMISSION_KEY + userId,
-                SecurityConstants.USER_POLICY_KEY + userId,
-                SecurityConstants.USER_SYS_PERM_KEY + userId,
-                SecurityConstants.USER_DATASOURCES_KEY + userId
-        );
-        redisTemplate.delete(keys);
-
-        log.info("==> 用户 {} 的所有会话及权限缓存已成功销毁", userId);
+        log.info("强制下线用户 {}", userId);
+        cacheService.evictAllUserCache(userId);
     }
 }

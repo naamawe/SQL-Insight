@@ -28,6 +28,13 @@ public interface DataSourceService {
     List<String> getTableNames(Long id);
 
     /**
+     * 手动刷新表名缓存
+     * @param id 数据源ID
+     * @return 表名列表
+     */
+    List<String> refreshTableNames(Long id);
+
+    /**
      * 分页查询数据源列表（管理员用）
      */
     Page<DataSourceVO> getDataSourcePage(int current, int size, String connName);

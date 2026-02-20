@@ -3,9 +3,10 @@ package com.xhx.core.service.sql.Impl;
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.xhx.ai.service.SqlAssistant;
-import com.xhx.common.constant.SecurityConstants;
 import com.xhx.common.exception.NotExistException;
 import com.xhx.common.exception.ServiceException;
+import com.xhx.core.service.cache.CacheService;
+import com.xhx.core.service.cache.PermissionLoader;
 import com.xhx.core.service.sql.SchemaCollectorService;
 import com.xhx.core.service.sql.SqlGeneratorService;
 import com.xhx.core.service.sql.SqlSecurityService;
@@ -13,13 +14,10 @@ import com.xhx.dal.entity.*;
 import com.xhx.dal.mapper.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.util.CollectionUtils;
 
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * @author master
@@ -34,15 +32,17 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
     private final SqlAssistant sqlAssistant;
     private final SchemaCollectorService schemaCollectorService;
     private final SqlSecurityService sqlSecurityService;
-    private final StringRedisTemplate redisTemplate;
+    private final PermissionLoader permissionLoader;
+    private final CacheService cacheService;
+    private final UserMapper userMapper;
 
     @Override
     public String generate(Long userId, Long sessionId, String question) {
+        // 校验 session
         ChatSession session = chatSessionMapper.selectOne(
                 new LambdaQueryWrapper<ChatSession>()
                         .eq(ChatSession::getId, sessionId)
-                        .eq(ChatSession::getUserId, userId)
-        );
+                        .eq(ChatSession::getUserId, userId));
         if (session == null) {
             throw new NotExistException(404, "会话不存在或无权访问");
         }
@@ -50,35 +50,39 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
         Long dataSourceId = session.getDataSourceId();
         DataSource dsConfig = dataSourceMapper.selectById(dataSourceId);
         if (dsConfig == null) {
-            throw new NotExistException(404, "数据源配置不存在或已被删除");
+            throw new NotExistException(404, "数据源配置不存在");
         }
 
-        String permKey = SecurityConstants.USER_PERMISSION_KEY + userId;
-        Set<String> allPerms = redisTemplate.opsForSet().members(permKey);
+        // 获取 roleId（先查缓存，再查DB）
+        Long roleId = getRoleId(userId);
 
-        if (CollectionUtils.isEmpty(allPerms)) {
+        // 懒加载表权限（带分布式锁防击穿）
+        Set<String> allPerms = permissionLoader.loadPermissions(userId, roleId);
+
+        if (allPerms.isEmpty()) {
             return "抱歉，您当前没有任何表的访问权限，请联系管理员授权。";
         }
 
+        // 过滤当前数据源的可用表
         List<String> allowedTables = allPerms.stream()
                 .filter(p -> p.startsWith(dataSourceId + ":"))
                 .map(p -> p.split(":")[1])
-                .collect(Collectors.toList());
+                .toList();
 
         if (allowedTables.isEmpty()) {
             return "抱歉，您在该数据源下没有已授权的表，请联系管理员配置权限。";
         }
 
-        String policyKey = SecurityConstants.USER_POLICY_KEY + userId;
-        String policyJson = redisTemplate.opsForValue().get(policyKey);
-        QueryPolicy policyEntity = JSON.parseObject(policyJson, QueryPolicy.class);
+        // 懒加载策略
+        String policyJson = permissionLoader.loadPolicy(userId, roleId);
+        QueryPolicy policyEntity = policyJson != null
+                ? JSON.parseObject(policyJson, QueryPolicy.class) : null;
 
         String schemaPrompt = schemaCollectorService.fetchPublicSchema(dsConfig, allowedTables);
         String policyPrompt = formatPolicy(policyEntity);
 
-        log.info("用户 {} 发起提问，调用 AI 生成 SQL...", userId);
+        log.info("用户 {} 发起提问，调用 AI 生成 SQL", userId);
         String response = sqlAssistant.chat(sessionId, schemaPrompt, policyPrompt, question);
-
         String cleanedSql = cleanSql(response);
 
         try {
@@ -88,8 +92,22 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
             throw new ServiceException(400, "SQL 校验未通过: " + e.getMessage());
         }
 
-        log.info("SQL 生成并校验通过: {}", cleanedSql);
         return cleanedSql;
+    }
+
+    /** 获取用户 roleId，先查缓存再查DB */
+    private Long getRoleId(Long userId) {
+        Long roleId = cacheService.getUserRoleId(userId);
+        if (roleId != null) {
+            return roleId;
+        }
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new NotExistException(404, "用户不存在");
+        }
+        // 回填缓存
+        cacheService.putUserRoleId(userId, user.getRoleId());
+        return user.getRoleId();
     }
 
     private String formatPolicy(QueryPolicy policy) {

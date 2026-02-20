@@ -28,6 +28,7 @@
         <jwt.version>0.12.6</jwt.version>
         <fastjson2.version>2.0.40</fastjson2.version>
         <jsqlparser.version>4.6</jsqlparser.version>
+        <guava.version>33.0.0-jre</guava.version>
     </properties>
 
     <dependencyManagement>
@@ -96,6 +97,11 @@
                 <groupId>com.github.jsqlparser</groupId>
                 <artifactId>jsqlparser</artifactId>
                 <version>${jsqlparser.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>${guava.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

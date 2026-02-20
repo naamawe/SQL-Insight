@@ -6,10 +6,13 @@ import com.xhx.common.context.UserContext;
 import com.xhx.common.exception.ConnectionException;
 import com.xhx.common.exception.NotExistException;
 import com.xhx.common.exception.ServiceException;
+import com.xhx.core.event.DataSourceDeletedEvent;
 import com.xhx.core.model.dto.DataSourceSaveDTO;
 import com.xhx.core.model.dto.DataSourceUpdateDTO;
 import com.xhx.core.model.vo.DataSourceVO;
+import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.management.DataSourceService;
+import com.xhx.core.service.management.UserDataSourceService;
 import com.xhx.dal.config.DynamicDataSourceManager;
 import com.xhx.dal.entity.DataSource;
 import com.xhx.dal.entity.TablePermission;
@@ -20,8 +23,11 @@ import com.xhx.dal.mapper.UserDataSourceMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.sql.*;
@@ -43,6 +49,9 @@ public class DataSourceServiceImpl implements DataSourceService {
     private final UserDataSourceMapper userDataSourceMapper;
     private final DynamicDataSourceManager dynamicDataSourceManager;
     private final TablePermissionMapper tablePermissionMapper;
+    private final UserDataSourceService userDataSourceService;
+    private final CacheService cacheService;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * 数据库类型 -> 驱动类名映射表
@@ -83,6 +92,14 @@ public class DataSourceServiceImpl implements DataSourceService {
 
     @Override
     public List<String> getTableNames(Long id) {
+        // 查缓存
+        List<String> cached = cacheService.getDsTables(id);
+        if (cached != null) {
+            log.debug("表名缓存命中，数据源: {}", id);
+            return cached;
+        }
+
+        // 查目标库
         DataSource ds = dataSourceMapper.selectById(id);
         if (ds == null) {
             throw new NotExistException("数据源不存在");
@@ -90,25 +107,34 @@ public class DataSourceServiceImpl implements DataSourceService {
 
         List<String> tables = new ArrayList<>();
         javax.sql.DataSource pooledDs = dynamicDataSourceManager.getDataSource(ds);
-
         try (Connection conn = pooledDs.getConnection()) {
-            DatabaseMetaData metaData = conn.getMetaData();
-
-            try (ResultSet rs = metaData.getTables(ds.getDatabaseName(), null, null, new String[]{"TABLE"})) {
+            DatabaseMetaData meta = conn.getMetaData();
+            try (ResultSet rs = meta.getTables(
+                    ds.getDatabaseName(), null, null, new String[]{"TABLE"})) {
                 while (rs.next()) {
-                    String tableName = rs.getString("TABLE_NAME");
-                    tables.add(tableName);
+                    tables.add(rs.getString("TABLE_NAME"));
                 }
             }
-            log.info("==> 成功从数据源 {} 同步到 {} 张表", ds.getConnName(), tables.size());
         } catch (SQLException e) {
-            log.error("==> 获取元数据失败: {}", e.getMessage());
             throw new ServiceException("同步数据库表结构失败: " + e.getMessage());
         }
-
         Collections.sort(tables);
+
+        // 回填缓存
+        cacheService.putDsTables(id, tables);
         return tables;
     }
+
+    /**
+     * 手动刷新表名缓存（管理员在目标库结构变更后调用）
+     */
+    @Override
+    public List<String> refreshTableNames(Long id) {
+        cacheService.evictDsTables(id);
+        log.info("数据源 {} 表名缓存已手动清除，下次访问将重新加载", id);
+        return getTableNames(id);
+    }
+
 
     @Override
     public Page<DataSourceVO> getDataSourcePage(int current, int size, String connName) {
@@ -171,18 +197,23 @@ public class DataSourceServiceImpl implements DataSourceService {
             return;
         }
 
-        // 清除连接池
         dynamicDataSourceManager.removeDataSource(id);
-
-        // 删除关联权限
         userDataSourceMapper.delete(new LambdaQueryWrapper<UserDataSource>()
                 .eq(UserDataSource::getDataSourceId, id));
         tablePermissionMapper.delete(new LambdaQueryWrapper<TablePermission>()
                 .eq(TablePermission::getDataSourceId, id));
-
-        // 逻辑删除
         dataSourceMapper.deleteById(id);
-        log.info("==> 数据源 [{}] 已执行软删除，物理连接已释放", ds.getConnName());
+
+        // 事务提交后异步失效表名缓存
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        eventPublisher.publishEvent(
+                                new DataSourceDeletedEvent(this, id));
+                    }
+                }
+        );
     }
 
     @Override
@@ -215,27 +246,19 @@ public class DataSourceServiceImpl implements DataSourceService {
 
     @Override
     public List<DataSourceVO> getMyDataSources(Long userId) {
-        // 1. 查询用户有权访问的数据源ID列表
-        List<Long> authorizedIds = userDataSourceMapper.selectList(
-                        new LambdaQueryWrapper<UserDataSource>()
-                                .eq(UserDataSource::getUserId, userId)
-                ).stream()
-                .map(UserDataSource::getDataSourceId)
-                .toList();
+        // 通过 UserDataSourceService 获取（内部已有缓存）
+        List<Long> authorizedIds = userDataSourceService.getAuthorizedDataSourceIds(userId);
 
         if (authorizedIds.isEmpty()) {
             return Collections.emptyList();
         }
 
-        // 2. 批量查询数据源详情（不包含密码）
-        List<DataSource> list = dataSourceMapper.selectList(
-                new LambdaQueryWrapper<DataSource>()
-                        .select(DataSource.class, info -> !"password".equals(info.getColumn()))
-                        .in(DataSource::getId, authorizedIds)
-                        .orderByDesc(DataSource::getGmtCreated)
-        );
-
-        return list.stream()
+        return dataSourceMapper.selectList(
+                        new LambdaQueryWrapper<DataSource>()
+                                .select(DataSource.class, info -> !"password".equals(info.getColumn()))
+                                .in(DataSource::getId, authorizedIds)
+                                .orderByDesc(DataSource::getGmtCreated))
+                .stream()
                 .map(this::convertToVO)
                 .toList();
     }

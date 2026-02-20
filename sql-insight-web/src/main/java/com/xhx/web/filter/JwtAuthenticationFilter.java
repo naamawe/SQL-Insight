@@ -3,6 +3,7 @@ package com.xhx.web.filter;
 import com.xhx.common.IgnoreUrlsConfig;
 import com.xhx.common.constant.SecurityConstants;
 import com.xhx.common.context.UserContext;
+import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.util.JwtUtil;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
@@ -13,7 +14,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.MDC;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -25,7 +25,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -37,9 +36,12 @@ import java.util.stream.Collectors;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
-    private final StringRedisTemplate redisTemplate;
     private final IgnoreUrlsConfig ignoreUrlsConfig;
+    private final CacheService cacheService;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
+
+    private static final String TOKEN_PREFIX = "Bearer ";
+    private static final String AUTHORIZATION_HEADER = "Authorization";
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -54,52 +56,42 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     @NotNull FilterChain filterChain)
             throws ServletException, IOException {
 
-        String authHeader = request.getHeader(SecurityConstants.AUTHORIZATION_HEADER);
-        if (!StringUtils.hasText(authHeader) || !authHeader.startsWith(SecurityConstants.TOKEN_PREFIX)) {
+        String authHeader = request.getHeader(AUTHORIZATION_HEADER);
+        if (!StringUtils.hasText(authHeader) || !authHeader.startsWith(TOKEN_PREFIX)) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String token = authHeader.substring(SecurityConstants.TOKEN_PREFIX.length());
+        String token = authHeader.substring(TOKEN_PREFIX.length());
 
         try {
             Claims claims = jwtUtil.parseToken(token);
             Long userId = claims.get("userId", Long.class);
             String username = claims.getSubject();
 
-            // 校验 Redis 中的 Token 是否仍然有效
-            String redisTokenKey = SecurityConstants.REDIS_TOKEN_KEY + userId;
-            String cachedToken = redisTemplate.opsForValue().get(redisTokenKey);
+            // 校验 Token 是否仍然有效
+            String cachedToken = cacheService.getToken(userId);
             if (!StringUtils.hasText(cachedToken) || !cachedToken.equals(token)) {
                 log.warn("Token 已失效，用户: {}", username);
                 renderError(response, "登录已失效，请重新登录");
                 return;
             }
 
-            // 从 Redis 获取实时权限快照
-            String redisPermKey = SecurityConstants.USER_SYS_PERM_KEY + userId;
-            String latestPerm = redisTemplate.opsForValue().get(redisPermKey);
+            // 获取实时系统权限快照
+            String latestPerm = cacheService.getUserSysPerm(userId);
             if (!StringUtils.hasText(latestPerm)) {
                 log.warn("权限快照缺失，用户: {}", username);
                 renderError(response, "权限已变更，请重新登录");
                 return;
             }
 
-            // 自动续期：剩余时间低于阈值时延长有效期
-            Long expire = redisTemplate.getExpire(redisTokenKey, TimeUnit.MINUTES);
-            if (expire != null && expire < SecurityConstants.TOKEN_RENEW_THRESHOLD) {
-                redisTemplate.expire(redisTokenKey, SecurityConstants.TOKEN_EXPIRE_MINUTES, TimeUnit.MINUTES);
-                redisTemplate.expire(redisPermKey, SecurityConstants.TOKEN_EXPIRE_MINUTES, TimeUnit.MINUTES);
-                log.info("Token 自动续期，用户: {}", username);
-            }
+            // 自动续期
+            renewIfNeeded(userId, username);
 
             if (SecurityContextHolder.getContext().getAuthentication() == null) {
                 List<String> roles = Collections.singletonList(latestPerm);
                 setupSecurityContext(request, userId, username, roles);
-
-                // 认证成功后将 userId 补充进 MDC，后续所有业务日志自动携带
                 MDC.put(MdcLoggingFilter.USER_ID_KEY, String.valueOf(userId));
-
                 log.debug("认证成功，用户: {}，权限: {}", username, latestPerm);
             }
 
@@ -108,6 +100,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         } catch (Exception e) {
             log.error("JWT 校验异常: {}", e.getMessage());
             renderError(response, "无效的令牌");
+        }
+    }
+
+    private void renewIfNeeded(Long userId, String username) {
+        try {
+            Long expireMinutes = cacheService.getTokenExpireMinutes(userId);
+            if (expireMinutes != null
+                    && expireMinutes < SecurityConstants.TOKEN_RENEW_THRESHOLD_MINUTES) {
+                cacheService.renewUserSession(userId);
+                log.info("用户 {} Token 自动续期", username);
+            }
+        } catch (Exception e) {
+            // 续期失败不影响本次请求
+            log.warn("用户 {} Token 续期失败: {}", userId, e.getMessage());
         }
     }
 
