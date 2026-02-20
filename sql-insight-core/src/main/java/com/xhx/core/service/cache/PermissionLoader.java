@@ -34,6 +34,8 @@ public class PermissionLoader {
     private final QueryPolicyMapper queryPolicyMapper;
     private final StringRedisTemplate redisTemplate;
 
+    private static final String NO_POLICY_SENTINEL = "NO_POLICY";
+
     /**
      * 获取用户表权限集合（Cache-Aside完整流程）
      *
@@ -98,6 +100,7 @@ public class PermissionLoader {
             return json;
         }
 
+        cacheService.putUserPolicy(userId, NO_POLICY_SENTINEL);
         return null;
     }
 

@@ -3,6 +3,7 @@ package com.xhx.core.service.management.Impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.xhx.common.exception.ServiceException;
+import com.xhx.core.event.RolePermissionChangedEvent;
 import com.xhx.core.model.dto.RoleSaveDTO;
 import com.xhx.core.model.dto.RoleUpdateDTO;
 import com.xhx.core.service.management.RoleService;
@@ -17,8 +18,11 @@ import com.xhx.dal.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * @author master
@@ -31,7 +35,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, Role> implements Ro
     private final UserMapper userMapper;
     private final TablePermissionMapper tablePermissionMapper;
     private final QueryPolicyMapper queryPolicyMapper;
-
+    private final ApplicationEventPublisher eventPublisher;
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createRole(RoleSaveDTO saveDTO) {
@@ -99,6 +103,16 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, Role> implements Ro
         );
 
         this.removeById(id);
+
+        // 在 removeById(id) 之后
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        eventPublisher.publishEvent(new RolePermissionChangedEvent(this, id));
+                    }
+                }
+        );
         log.info("==> 角色 [{}] 删除成功", role.getRoleName());
     }
 }

@@ -42,6 +42,8 @@ public class UserDataSourceServiceImpl extends ServiceImpl<UserDataSourceMapper,
         // 失效缓存（同时失效权限，因为数据源变了权限集合也要重新加载）
         cacheService.evictUserDsIds(userId);
         cacheService.evictUserPermissions(userId);
+        cacheService.evictUserPolicy(userId);
+
         log.info("用户 {} 数据源授权已变更，相关缓存已失效", userId);
     }
 

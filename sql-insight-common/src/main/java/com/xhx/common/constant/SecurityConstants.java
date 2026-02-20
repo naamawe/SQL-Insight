@@ -37,17 +37,6 @@ public class SecurityConstants {
     /** lock:perm:load:{userId} */
     public static final String LOCK_PERM_LOAD_KEY = "lock:perm:load:";
 
-    // ==================== 兼容旧代码（过渡期保留，重构完删除） ====================
-    /** @deprecated use TOKEN_KEY */
-    @Deprecated
-    public static final String REDIS_TOKEN_KEY = TOKEN_KEY;
-    /** @deprecated use USER_PERM_SET_KEY */
-    @Deprecated
-    public static final String USER_PERMISSION_KEY = USER_PERM_SET_KEY;
-    /** @deprecated use USER_DS_IDS_KEY */
-    @Deprecated
-    public static final String USER_DATASOURCES_KEY = USER_DS_IDS_KEY;
-
     // ==================== TTL ====================
     public static final long TOKEN_TTL_HOURS = 24;
     public static final long PERM_TTL_BASE_MINUTES = 1440;
@@ -55,5 +44,4 @@ public class SecurityConstants {
     public static final long DS_TABLES_TTL_MINUTES = 10;
     public static final long LOCK_TTL_SECONDS = 5;
     public static final long TOKEN_RENEW_THRESHOLD_MINUTES = 10;
-    public static final long TOKEN_EXPIRE_MINUTES = 30;
 }
