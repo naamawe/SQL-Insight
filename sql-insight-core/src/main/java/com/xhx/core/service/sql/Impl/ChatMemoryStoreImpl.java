@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -30,14 +31,19 @@ public class ChatMemoryStoreImpl implements ChatMemoryStore {
     public List<ChatMessage> getMessages(Object memoryId) {
         Long sessionId = (Long) memoryId;
 
+        // 先倒序取最近 MEMORY_SIZE 条
         Page<ChatMessageEntity> page = chatMessageMapper.selectPage(
                 new Page<>(1, MEMORY_SIZE),
                 new LambdaQueryWrapper<ChatMessageEntity>()
                         .eq(ChatMessageEntity::getSessionId, sessionId)
-                        .orderByAsc(ChatMessageEntity::getCreateTime)
+                        .orderByDesc(ChatMessageEntity::getCreateTime)
         );
 
-        return page.getRecords().stream().map(entity -> {
+        // 再反转，恢复时间正序后交给 AI
+        List<ChatMessageEntity> records = page.getRecords();
+        Collections.reverse(records);
+
+        return records.stream().map(entity -> {
             if (ChatMessageType.USER.name().equals(entity.getRole())) {
                 return UserMessage.from(entity.getContent());
             } else {

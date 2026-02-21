@@ -27,10 +27,29 @@ public class DataSource {
     private Integer isDeleted;
 
     public String toJdbcUrl() {
-        return String.format(
-                "jdbc:%s://%s:%d/%s?useInformationSchema=true&remarks=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai",
-                dbType.toLowerCase(), host, port, databaseName
-        );
+        return switch (dbType.toLowerCase()) {
+            case "mysql" -> String.format(
+                    "jdbc:mysql://%s:%d/%s" +
+                            "?useInformationSchema=true&remarks=true" +
+                            "&characterEncoding=utf8&serverTimezone=Asia/Shanghai" +
+                            "&useSSL=false&allowPublicKeyRetrieval=true",
+                    host, port, databaseName);
+
+            case "postgresql" -> String.format(
+                    "jdbc:postgresql://%s:%d/%s",
+                    host, port, databaseName);
+
+            case "oracle" -> String.format(
+                    "jdbc:oracle:thin:@%s:%d:%s",
+                    host, port, databaseName);
+
+            case "sqlserver" -> String.format(
+                    "jdbc:sqlserver://%s:%d;databaseName=%s;encrypt=false",
+                    host, port, databaseName);
+
+            default -> throw new IllegalArgumentException(
+                    "不支持的数据库类型: " + dbType);
+        };
     }
 
 }

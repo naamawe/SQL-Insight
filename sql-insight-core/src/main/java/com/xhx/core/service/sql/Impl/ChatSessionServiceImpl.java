@@ -94,14 +94,24 @@ public class ChatSessionServiceImpl implements ChatSessionService {
             return;
         }
 
-        // 只删除属于当前用户的会话
+        List<Long> ownedSessionIds = chatSessionMapper.selectList(
+                new LambdaQueryWrapper<ChatSession>()
+                        .select(ChatSession::getId)
+                        .eq(ChatSession::getUserId, userId)
+                        .in(ChatSession::getId, sessionIds)
+        ).stream().map(ChatSession::getId).toList();
+
+        if (ownedSessionIds.isEmpty()) {
+            return;
+        }
+
         chatSessionMapper.delete(new LambdaQueryWrapper<ChatSession>()
                 .eq(ChatSession::getUserId, userId)
-                .in(ChatSession::getId, sessionIds));
+                .in(ChatSession::getId, ownedSessionIds));
 
         chatMessageMapper.delete(new LambdaQueryWrapper<ChatMessageEntity>()
-                .in(ChatMessageEntity::getSessionId, sessionIds));
+                .in(ChatMessageEntity::getSessionId, ownedSessionIds));
 
-        log.info("==> 批量删除会话成功，共删除 {} 个", sessionIds.size());
+        log.info("==> 批量删除会话成功，userId: {}，共删除 {} 个", userId, ownedSessionIds.size());
     }
 }
