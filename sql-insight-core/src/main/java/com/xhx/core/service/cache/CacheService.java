@@ -1,5 +1,7 @@
 package com.xhx.core.service.cache;
 
+import com.xhx.core.model.TableMetadata;
+
 import java.util.List;
 import java.util.Set;
 
@@ -15,6 +17,7 @@ public interface CacheService {
     String getToken(Long userId);
     void evictToken(Long userId);
     Long getTokenExpireMinutes(Long userId);
+
     // ===== 用户系统权限（ROLE_ADMIN 等） =====
     void putUserSysPerm(Long userId, String perm);
     String getUserSysPerm(Long userId);
@@ -57,6 +60,26 @@ public interface CacheService {
     /** @return null 表示缓存未命中 */
     List<String> getDsTables(Long dataSourceId);
     void evictDsTables(Long dataSourceId);
+
+    // ===== Schema 元数据缓存（结构化，供 SchemaLinker 使用） =====
+    /**
+     * 写入结构化 Schema 元数据
+     * @param dataSourceId 数据源ID
+     * @param permHash     有序表名列表的 hashCode（十六进制），不同权限组合各自独立缓存
+     * @param metadata     结构化元数据列表
+     */
+    void putSchemaMetadata(Long dataSourceId, String permHash, List<TableMetadata> metadata);
+
+    /**
+     * 读取结构化 Schema 元数据
+     * @return null 表示缓存未命中
+     */
+    List<TableMetadata> getSchemaMetadata(Long dataSourceId, String permHash);
+
+    /**
+     * 失效某数据源下所有 Schema 缓存（表结构变更 / 数据源删除时调用）
+     */
+    void evictSchema(Long dataSourceId);
 
     // ===== 批量失效（登出/踢人） =====
     void evictAllUserCache(Long userId);

@@ -127,11 +127,13 @@ public class DataSourceServiceImpl implements DataSourceService {
 
     /**
      * 手动刷新表名缓存（管理员在目标库结构变更后调用）
+     * 同时失效 Schema 缓存，因为表结构可能发生变化
      */
     @Override
     public List<String> refreshTableNames(Long id) {
         cacheService.evictDsTables(id);
-        log.info("数据源 {} 表名缓存已手动清除，下次访问将重新加载", id);
+        cacheService.evictSchema(id);
+        log.info("数据源 {} 表名缓存和 Schema 缓存已手动清除，下次访问将重新加载", id);
         return getTableNames(id);
     }
 

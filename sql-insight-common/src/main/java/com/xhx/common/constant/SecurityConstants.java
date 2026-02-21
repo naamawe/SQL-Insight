@@ -33,6 +33,12 @@ public class SecurityConstants {
     /** ds:tables:{dataSourceId} →  String: ["t1","t2"] JSON */
     public static final String DS_TABLES_KEY = "ds:tables:";
 
+    /**
+     * schema:{dataSourceId}:{permHash} → String: schema markdown 文本
+     * permHash 由有序表名列表的 hashCode 生成，不同权限组合各自独立缓存
+     */
+    public static final String SCHEMA_KEY = "schema:";
+
     // ==================== 分布式锁 ====================
     /** lock:perm:load:{userId} */
     public static final String LOCK_PERM_LOAD_KEY = "lock:perm:load:";
@@ -42,6 +48,8 @@ public class SecurityConstants {
     public static final long PERM_TTL_BASE_MINUTES = 1440;
     public static final long PERM_TTL_RANDOM_MINUTES = 60;
     public static final long DS_TABLES_TTL_MINUTES = 10;
+    /** Schema 元数据缓存时间，表结构变更频率低，可以缓存更长时间 */
+    public static final long SCHEMA_TTL_MINUTES = 60;
     public static final long LOCK_TTL_SECONDS = 5;
     public static final long TOKEN_RENEW_THRESHOLD_MINUTES = 10;
 }

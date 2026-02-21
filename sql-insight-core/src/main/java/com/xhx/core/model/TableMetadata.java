@@ -1,6 +1,8 @@
 package com.xhx.core.model;
 
 import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -9,6 +11,7 @@ import java.util.stream.Collectors;
  * @author master
  */
 @Data
+@NoArgsConstructor
 public class TableMetadata {
     private String tableName;
     private String tableComment;
@@ -19,7 +22,7 @@ public class TableMetadata {
      */
     public String toPromptString() {
         StringBuilder sb = new StringBuilder();
-        sb.append("### 表名: ").append(tableName);
+        sb.append("表名: ").append(tableName);
         if (tableComment != null && !tableComment.isEmpty()) {
             sb.append(" (").append(tableComment).append(")");
         }

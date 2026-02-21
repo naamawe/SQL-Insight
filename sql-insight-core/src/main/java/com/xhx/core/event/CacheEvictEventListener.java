@@ -61,16 +61,24 @@ public class CacheEvictEventListener {
     }
 
     /**
-     * 数据源删除 → 失效表名缓存
+     * 数据源删除 → 失效表名缓存 + Schema 缓存 + 有该数据源权限的用户缓存
      */
     @Async
     @EventListener
     public void onDataSourceDeleted(DataSourceDeletedEvent event) {
         Long dsId = event.getDataSourceId();
+
+        // 失效表名缓存
         cacheService.evictDsTables(dsId);
+
+        // 失效该数据源下所有 Schema 缓存（包含所有权限组合版本）
+        cacheService.evictSchema(dsId);
 
         // 同时失效有该数据源权限的用户缓存
         List<Long> userIds = userDataSourceMapper.selectUserIdsByDataSourceId(dsId);
         userIds.forEach(permissionLoader::evict);
+
+        log.info("数据源 {} 删除，表名缓存、Schema 缓存及 {} 个相关用户缓存已失效",
+                dsId, userIds.size());
     }
 }

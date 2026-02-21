@@ -5,9 +5,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.xhx.ai.service.SqlAssistant;
 import com.xhx.common.exception.NotExistException;
 import com.xhx.common.exception.ServiceException;
+import com.xhx.core.model.TableMetadata;
 import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.cache.PermissionLoader;
 import com.xhx.core.service.sql.SchemaCollectorService;
+import com.xhx.core.service.sql.SchemaLinker;
 import com.xhx.core.service.sql.SqlGeneratorService;
 import com.xhx.core.service.sql.SqlSecurityService;
 import com.xhx.dal.entity.*;
@@ -31,6 +33,7 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
     private final ChatSessionMapper chatSessionMapper;
     private final SqlAssistant sqlAssistant;
     private final SchemaCollectorService schemaCollectorService;
+    private final SchemaLinker schemaLinker;
     private final SqlSecurityService sqlSecurityService;
     private final PermissionLoader permissionLoader;
     private final CacheService cacheService;
@@ -38,7 +41,6 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
 
     @Override
     public String generate(Long userId, Long sessionId, String question) {
-        // 校验 session
         ChatSession session = chatSessionMapper.selectOne(
                 new LambdaQueryWrapper<ChatSession>()
                         .eq(ChatSession::getId, sessionId)
@@ -53,38 +55,46 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
             throw new NotExistException(404, "数据源配置不存在");
         }
 
-        // 获取 roleId（先查缓存，再查DB）
         Long roleId = getRoleId(userId);
 
-        // 懒加载表权限（带分布式锁防击穿）
         Set<String> allPerms = permissionLoader.loadPermissions(userId, roleId);
-
         if (allPerms.isEmpty()) {
             return "抱歉，您当前没有任何表的访问权限，请联系管理员授权。";
         }
 
-        // 过滤当前数据源的可用表
+        // 过滤当前数据源的可用表名
         List<String> allowedTables = allPerms.stream()
                 .filter(p -> p.startsWith(dataSourceId + ":"))
-                .map(p -> p.split(":")[1])
+                .map(p -> p.split(":", 3)[1])
                 .toList();
 
         if (allowedTables.isEmpty()) {
             return "抱歉，您在该数据源下没有已授权的表，请联系管理员配置权限。";
         }
 
-        // 懒加载策略
+        // 获取全量结构化元数据
+        List<TableMetadata> allMetadata = schemaCollectorService.getMetadata(dsConfig, allowedTables);
+
+        // Schema Linking：根据问题过滤出最相关的表，减少 Prompt 噪音
+        List<TableMetadata> linkedMetadata = schemaLinker.link(question, allMetadata);
+        log.info("Schema Linking 结果：全量 {} 张表 → 相关 {} 张表",
+                allMetadata.size(), linkedMetadata.size());
+
+        // 格式化
+        String schemaPrompt = schemaCollectorService.format(linkedMetadata);
+
         String policyJson = permissionLoader.loadPolicy(userId, roleId);
         QueryPolicy policyEntity = policyJson != null
                 ? JSON.parseObject(policyJson, QueryPolicy.class) : null;
-
-        String schemaPrompt = schemaCollectorService.fetchPublicSchema(dsConfig, allowedTables);
         String policyPrompt = formatPolicy(policyEntity);
 
-        log.info("用户 {} 发起提问，调用 AI 生成 SQL", userId);
+        // 调用 AI
+        log.info("用户 {} 发起提问，调用 AI 生成 SQL，相关表: {}",
+                userId, linkedMetadata.stream().map(TableMetadata::getTableName).toList());
         String response = sqlAssistant.chat(sessionId, schemaPrompt, policyPrompt, question);
         String cleanedSql = cleanSql(response);
 
+        // 安全校验
         try {
             sqlSecurityService.validate(cleanedSql, userId, dataSourceId);
         } catch (Exception e) {
@@ -105,7 +115,6 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
         if (user == null) {
             throw new NotExistException(404, "用户不存在");
         }
-        // 回填缓存
         cacheService.putUserRoleId(userId, user.getRoleId());
         return user.getRoleId();
     }
@@ -116,7 +125,8 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
         }
 
         StringBuilder sb = new StringBuilder("必须严格遵守以下查询约束：\n");
-        sb.append(String.format("- 如果是 SELECT 语句，必须包含 LIMIT，且最大不能超过 %d 行。\n", policy.getMaxLimit()));
+        sb.append(String.format("- 如果是 SELECT 语句，必须包含 LIMIT，且最大不能超过 %d 行。\n",
+                policy.getMaxLimit()));
 
         if (policy.getAllowJoin() == 0) {
             sb.append("- 禁止使用 JOIN 进行多表关联查询。\n");

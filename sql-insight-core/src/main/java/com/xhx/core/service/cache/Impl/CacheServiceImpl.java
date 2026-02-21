@@ -1,7 +1,9 @@
 package com.xhx.core.service.cache.Impl;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.TypeReference;
 import com.xhx.common.constant.SecurityConstants;
+import com.xhx.core.model.TableMetadata;
 import com.xhx.core.service.cache.CacheService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +49,7 @@ public class CacheServiceImpl implements CacheService {
         return redisTemplate.getExpire(
                 SecurityConstants.TOKEN_KEY + userId, TimeUnit.MINUTES);
     }
+
     // ==================== 系统权限 ====================
 
     @Override
@@ -98,18 +101,14 @@ public class CacheServiceImpl implements CacheService {
         String markKey = SecurityConstants.USER_PERM_MARK_KEY + userId;
         long ttl = randomTtl();
 
-        // 先删旧数据
         redisTemplate.delete(setKey);
 
-        // 写权限集合（非空才写，空集合不写 setKey，只写 markKey）
         if (!permissions.isEmpty()) {
             redisTemplate.opsForSet().add(setKey, permissions.toArray(new String[0]));
             redisTemplate.expire(setKey, ttl, TimeUnit.MINUTES);
         }
 
-        // 无论是否为空，都写标记Key（表示"已加载过，不需要再去DB查了"）
         redisTemplate.opsForValue().set(markKey, "1", ttl, TimeUnit.MINUTES);
-
         log.debug("用户 {} 权限缓存已写入，权限数量: {}", userId, permissions.size());
     }
 
@@ -117,7 +116,6 @@ public class CacheServiceImpl implements CacheService {
     public Set<String> getUserPermissions(Long userId) {
         String markKey = SecurityConstants.USER_PERM_MARK_KEY + userId;
 
-        // 以 markKey 判断是否命中（解决空集合无法缓存的问题）
         if (Boolean.FALSE.equals(redisTemplate.hasKey(markKey))) {
             return null;
         }
@@ -201,6 +199,42 @@ public class CacheServiceImpl implements CacheService {
         redisTemplate.delete(SecurityConstants.DS_TABLES_KEY + dataSourceId);
     }
 
+    // ==================== Schema 元数据缓存 ====================
+
+    @Override
+    public void putSchemaMetadata(Long dataSourceId, String permHash, List<TableMetadata> metadata) {
+        String key = SecurityConstants.SCHEMA_KEY + dataSourceId + ":" + permHash;
+        redisTemplate.opsForValue().set(
+                key,
+                JSON.toJSONString(metadata),
+                SecurityConstants.SCHEMA_TTL_MINUTES, TimeUnit.MINUTES
+        );
+        log.debug("Schema 元数据缓存已写入，数据源: {}, hash: {}, 表数量: {}",
+                dataSourceId, permHash, metadata.size());
+    }
+
+    @Override
+    public List<TableMetadata> getSchemaMetadata(Long dataSourceId, String permHash) {
+        String key = SecurityConstants.SCHEMA_KEY + dataSourceId + ":" + permHash;
+        String json = redisTemplate.opsForValue().get(key);
+        if (json == null) {
+            return null;
+        }
+        return JSON.parseObject(json, new TypeReference<>() {}
+        );
+    }
+
+    @Override
+    public void evictSchema(Long dataSourceId) {
+        String pattern = SecurityConstants.SCHEMA_KEY + dataSourceId + ":*";
+        Set<String> keys = redisTemplate.keys(pattern);
+        if (keys != null && !keys.isEmpty()) {
+            redisTemplate.delete(keys);
+            log.info("数据源 {} 的 Schema 缓存已全部失效，共删除 {} 个 key",
+                    dataSourceId, keys.size());
+        }
+    }
+
     // ==================== 批量失效 ====================
 
     @Override
@@ -222,7 +256,6 @@ public class CacheServiceImpl implements CacheService {
 
     @Override
     public void renewUserSession(Long userId) {
-        // 续期所有与会话相关的 Key
         List<String> sessionKeys = Arrays.asList(
                 SecurityConstants.TOKEN_KEY + userId,
                 SecurityConstants.USER_SYS_PERM_KEY + userId,
@@ -234,7 +267,6 @@ public class CacheServiceImpl implements CacheService {
 
     // ==================== 私有工具 ====================
 
-    /** 生成带随机偏移的 TTL，防止大量Key同时过期导致雪崩 */
     private long randomTtl() {
         return SecurityConstants.PERM_TTL_BASE_MINUTES
                 + (long) (Math.random() * SecurityConstants.PERM_TTL_RANDOM_MINUTES);

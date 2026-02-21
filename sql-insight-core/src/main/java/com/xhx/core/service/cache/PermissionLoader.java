@@ -34,6 +34,10 @@ public class PermissionLoader {
     private final QueryPolicyMapper queryPolicyMapper;
     private final StringRedisTemplate redisTemplate;
 
+    /**
+     * 哨兵值：标记"该角色确实没有配置策略"
+     * 仅在缓存层内部使用，对外调用方不可见
+     */
     private static final String NO_POLICY_SENTINEL = "NO_POLICY";
 
     /**
@@ -81,14 +85,16 @@ public class PermissionLoader {
     }
 
     /**
-     * 获取用户查询策略（Cache-Aside，策略相对简单，不需要加锁）
+     * 获取用户查询策略（Cache-Aside）
      */
     public String loadPolicy(Long userId, Long roleId) {
         String cached = cacheService.getUserPolicy(userId);
         if (cached != null) {
-            return cached;
+            // 命中哨兵：对外屏蔽，直接返回 null
+            return NO_POLICY_SENTINEL.equals(cached) ? null : cached;
         }
 
+        // 缓存未命中，查 DB
         QueryPolicy policy = queryPolicyMapper.selectOne(
                 new LambdaQueryWrapper<QueryPolicy>()
                         .eq(QueryPolicy::getRoleId, roleId)
@@ -100,12 +106,13 @@ public class PermissionLoader {
             return json;
         }
 
+        // 无策略：写哨兵防止缓存穿透，对外返回 null
         cacheService.putUserPolicy(userId, NO_POLICY_SENTINEL);
         return null;
     }
 
     /**
-     * 从DB加载权限并回填缓存（被 loadPermissions 内部调用）
+     * 从DB加载权限并回填缓存（被 loadPermissions 内部调用，也可由预热任务直接调用）
      */
     public Set<String> doLoadFromDb(Long userId, Long roleId) {
         log.info("用户 {} 权限缓存未命中，从DB加载（roleId: {}）", userId, roleId);
@@ -137,7 +144,7 @@ public class PermissionLoader {
     }
 
     /**
-     * 失效用户权限相关缓存（变更时调用，只删不写）
+     * 失效用户权限相关缓存（权限变更时调用，只删不写）
      */
     public void evict(Long userId) {
         cacheService.evictUserPermissions(userId);

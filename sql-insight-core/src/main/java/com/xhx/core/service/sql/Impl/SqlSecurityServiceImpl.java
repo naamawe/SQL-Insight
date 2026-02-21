@@ -29,8 +29,13 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
         log.info("[安全审计] userId: {}, dsId: {}, sql: {}", userId, dataSourceId, sql);
         try {
             Statement statement = CCJSqlParserUtil.parse(sql);
+
             TablesNamesFinder finder = new TablesNamesFinder();
-            List<String> tableNames = finder.getTableList(statement);
+            Set<String> tableSet = finder.getTables(statement);
+
+            List<String> tableNames = tableSet.stream()
+                    .map(String::toLowerCase)
+                    .toList();
 
             checkTableAccess(userId, dataSourceId, tableNames);
             checkPolicy(userId, sql);
@@ -45,7 +50,6 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
      * Redis 中存储格式为：{dataSourceId}:{tableName}:{PERMISSION}，例如 "1:orders:SELECT"
      */
     private void checkTableAccess(Long userId, Long dataSourceId, List<String> tableNames) {
-        // 此处直接读缓存（generate 时已经懒加载过，这里必然命中）
         Set<String> allPerms = cacheService.getUserPermissions(userId);
         if (allPerms == null) {
             throw new RuntimeException("权限信息不可用，请重新登录后再试");
@@ -70,8 +74,7 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
         QueryPolicy policy = JSON.parseObject(policyJson, QueryPolicy.class);
         String upper = sql.toUpperCase();
 
-        if (policy.getAllowJoin() == 0 &&
-                (upper.contains("JOIN") || upper.contains(","))) {
+        if (policy.getAllowJoin() == 0 && upper.contains("JOIN")) {
             throw new RuntimeException("当前策略禁止关联查询(JOIN)");
         }
         if (policy.getAllowSubquery() == 0 && isSubquery(upper)) {

@@ -1,20 +1,35 @@
 package com.xhx.core.service.sql;
 
+import com.xhx.core.model.TableMetadata;
 import com.xhx.dal.entity.DataSource;
 
 import java.util.List;
 
 /**
+ * Schema 采集服务
+ * 职责拆分：
+ *   - getMetadata：从目标库获取结构化元数据（带缓存），供 SchemaLinker 使用
+ *   - format：将元数据列表格式化为 AI 可读的 Markdown 文本
+ *   - fetchPublicSchema：组合方法，兼容旧调用（内部调 getMetadata + format）
  * @author master
  */
-
 public interface SchemaCollectorService {
 
     /**
-     * 根据数据源和权限表，抓取AI所需的元数据信息
-     * @param ds 数据源
-     * @param allowsTables 允许的表
-     * @return 元数据信息
+     * 获取指定表的结构化元数据列表（带 Redis 缓存）
+     * SchemaLinker 需要用结构化数据做关键词评分，所以单独暴露此方法
+     *
+     * @param dsConfig     数据源配置
+     * @param allowedTables 当前用户有权限的表名列表
+     * @return 结构化元数据列表
      */
-    String fetchPublicSchema(DataSource ds, List<String> allowsTables);
+    List<TableMetadata> getMetadata(DataSource dsConfig, List<String> allowedTables);
+
+    /**
+     * 将元数据列表格式化为 AI Prompt 所需的 Markdown 文本
+     *
+     * @param tables 经过 SchemaLinker 过滤后的表元数据
+     * @return schema markdown 字符串
+     */
+    String format(List<TableMetadata> tables);
 }
