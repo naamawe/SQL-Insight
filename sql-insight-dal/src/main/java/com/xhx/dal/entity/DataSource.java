@@ -39,10 +39,6 @@ public class DataSource {
                     "jdbc:postgresql://%s:%d/%s",
                     host, port, databaseName);
 
-            case "oracle" -> String.format(
-                    "jdbc:oracle:thin:@%s:%d:%s",
-                    host, port, databaseName);
-
             case "sqlserver" -> String.format(
                     "jdbc:sqlserver://%s:%d;databaseName=%s;encrypt=false",
                     host, port, databaseName);

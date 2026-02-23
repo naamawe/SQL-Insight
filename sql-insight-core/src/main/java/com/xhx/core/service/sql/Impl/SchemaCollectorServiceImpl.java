@@ -1,6 +1,6 @@
 package com.xhx.core.service.sql.Impl;
 
-import com.xhx.core.extractor.MetadataExtractor;
+import com.xhx.core.extractor.MetadataExtractorRouter;
 import com.xhx.core.model.TableMetadata;
 import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.sql.SchemaCollectorService;
@@ -21,9 +21,12 @@ import java.util.stream.Collectors;
  * Schema 采集服务实现
  * <p>
  * 缓存策略：
- *   缓存的是结构化的 List<TableMetadata>（JSON 序列化存 Redis）
- *   而不是格式化后的字符串，这样 SchemaLinker 才能拿到结构化数据做评分
- *   格式化（format）在 SchemaLinker 过滤之后才执行，不进缓存
+ *   缓存结构化的 List<TableMetadata>（JSON 序列化存 Redis）
+ *   格式化（format）在 SchemaLinker 过滤之后执行，不进缓存
+ * <p>
+ * 多数据库支持：
+ *   通过 MetadataExtractorRouter 按 dbType 路由到对应提取器
+ *   各数据库注释获取方式差异由各自的 Extractor 实现封装
  *
  * @author master
  */
@@ -33,13 +36,9 @@ import java.util.stream.Collectors;
 public class SchemaCollectorServiceImpl implements SchemaCollectorService {
 
     private final DynamicDataSourceManager dataSourceManager;
-    private final MetadataExtractor metadataExtractor;
+    private final MetadataExtractorRouter metadataExtractorRouter;
     private final CacheService cacheService;
 
-    /**
-     * 获取结构化元数据（带缓存）
-     * Key：schema:{dsId}:{permHash}，permHash 由有序表名列表的 hashCode 生成
-     */
     @Override
     public List<TableMetadata> getMetadata(DataSource dsConfig, List<String> allowedTables) {
         if (CollectionUtils.isEmpty(allowedTables)) {
@@ -58,12 +57,15 @@ public class SchemaCollectorServiceImpl implements SchemaCollectorService {
         }
 
         // 缓存未命中，查目标库
-        log.info("Schema 元数据缓存未命中，从目标库加载，数据源: {}, 表数量: {}",
-                dsConfig.getConnName(), sortedTables.size());
+        log.info("Schema 元数据缓存未命中，从目标库加载，数据源: {} [{}], 表数量: {}",
+                dsConfig.getConnName(), dsConfig.getDbType(), sortedTables.size());
 
         javax.sql.DataSource dataSource = dataSourceManager.getDataSource(dsConfig);
         try (Connection conn = dataSource.getConnection()) {
-            List<TableMetadata> metadata = metadataExtractor.extract(conn, sortedTables);
+            // 通过 Router 按 dbType 路由到对应的 Extractor
+            List<TableMetadata> metadata = metadataExtractorRouter.extract(
+                    dsConfig.getDbType(), conn, sortedTables);
+
             // 回填缓存
             cacheService.putSchemaMetadata(dsConfig.getId(), permHash, metadata);
             return metadata;
@@ -73,10 +75,6 @@ public class SchemaCollectorServiceImpl implements SchemaCollectorService {
         }
     }
 
-    /**
-     * 将元数据列表格式化为 AI Prompt 所需的 Markdown 文本
-     * 此方法不做缓存，入参已经是 SchemaLinker 过滤后的子集
-     */
     @Override
     public String format(List<TableMetadata> tables) {
         if (CollectionUtils.isEmpty(tables)) {

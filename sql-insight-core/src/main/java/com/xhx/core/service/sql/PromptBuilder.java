@@ -22,7 +22,6 @@ import java.util.concurrent.ConcurrentHashMap;
  *   prompts/system-prompt-base.txt
  *   prompts/few-shot-mysql.txt
  *   prompts/few-shot-postgresql.txt
- *   prompts/few-shot-oracle.txt
  *   prompts/few-shot-sqlserver.txt
  *
  * @author master
@@ -38,7 +37,7 @@ public class PromptBuilder {
     private final Map<String, String> fewShotMap = new ConcurrentHashMap<>();
 
     private static final String[] SUPPORTED_DB_TYPES =
-            {"mysql", "postgresql", "oracle", "sqlserver"};
+            {"mysql", "postgresql", "sqlserver"};
 
     @PostConstruct
     public void init() {
@@ -60,7 +59,7 @@ public class PromptBuilder {
     /**
      * 拼装完整的 systemPrompt
      *
-     * @param dbType  数据库类型（mysql / postgresql / oracle / sqlserver）
+     * @param dbType  数据库类型（mysql / postgresql / sqlserver）
      * @param schema  经过 SchemaLinker 过滤并格式化后的 schema 文本
      * @param policy  格式化后的 policy 约束文本
      * @return 完整的 systemPrompt 字符串，直接传给 SqlExecutor.execute()
