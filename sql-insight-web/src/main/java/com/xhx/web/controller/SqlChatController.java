@@ -62,8 +62,6 @@ public class SqlChatController {
     private final NlFeedbackGenerator nlFeedbackGenerator;
     private final SqlChatApiService sqlChatApiService;
 
-    // ==================== 阻塞模式 ====================
-
     /**
      * 阻塞模式 AI 对话
      * 流程：生成 SQL → 执行 → Self-correction → 生成摘要 → 一次性返回
@@ -110,8 +108,6 @@ public class SqlChatController {
             }
         }
     }
-
-    // ==================== SSE 流式模式 ====================
 
     /**
      * SSE 流式 AI 对话
