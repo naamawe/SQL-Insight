@@ -1,8 +1,12 @@
 package com.xhx.ai.service;
 
+import com.xhx.ai.listener.ChatStreamListener;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.StreamingResponseHandler;
 import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.StreamingChatLanguageModel;
+import dev.langchain4j.model.output.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -13,12 +17,16 @@ import java.util.Map;
 /**
  * 自然语言反馈生成器
  * <p>
- * 职责：在 SQL 执行完成后，用一句自然语言向用户描述查询结果。
+ * 职责：在 SQL 执行完成后，用自然语言向用户描述查询结果。
+ * <p>
+ * 提供两种模式：
+ *   - {@link #generate}：阻塞模式，兼容旧版 /chat 接口
+ *   - {@link #generateStream}：流式模式，配合 SSE /chat/stream 接口逐 token 推送
  * <p>
  * 设计原则：
  *   - 使用独立的一次性对话，不写入 ChatMemory，不影响对话历史
- *   - 结果数据只传摘要信息（行数 + 前几行样本），避免数据量过大撑爆 token
- *   - 生成失败时静默降级，不影响主流程返回
+ *   - 只传摘要信息（行数 + 前 MAX_SAMPLE_ROWS 行），避免大结果集超 token 限制
+ *   - 失败时静默降级，不影响主流程
  *
  * @author master
  */
@@ -28,6 +36,7 @@ import java.util.Map;
 public class NlFeedbackGenerator {
 
     private final ChatLanguageModel chatLanguageModel;
+    private final StreamingChatLanguageModel streamingChatLanguageModel;
 
     /** 传给 AI 的最大样本行数，避免结果集过大导致 token 超限 */
     private static final int MAX_SAMPLE_ROWS = 5;
@@ -42,46 +51,88 @@ public class NlFeedbackGenerator {
             4. 如果结果为空，说明未找到符合条件的数据
             """;
 
+    // ==================== 阻塞模式（兼容旧 /chat 接口） ====================
+
     /**
-     * 根据问题、SQL、执行结果生成自然语言摘要
+     * 阻塞生成摘要
      *
-     * @param question 用户原始问题
-     * @param sql      执行的 SQL
-     * @param data     SQL 执行结果
-     * @return 自然语言摘要；生成失败时返回 null（调用方自行处理降级）
+     * @return 摘要文本；失败时返回 null，由调用方决定是否降级
      */
     public String generate(String question, String sql, List<Map<String, Object>> data) {
         try {
             String userContent = buildUserContent(question, sql, data);
-
             var response = chatLanguageModel.generate(
                     List.of(
                             SystemMessage.from(SYSTEM_PROMPT),
                             UserMessage.from(userContent)
                     )
             );
-
             String summary = response.content().text();
-            log.debug("自然语言摘要生成成功: {}", summary);
+            log.debug("摘要生成成功: {}", summary);
             return summary;
-
         } catch (Exception e) {
-            // 摘要生成失败不影响主流程，静默降级
-            log.warn("自然语言摘要生成失败，降级跳过: {}", e.getMessage());
+            log.warn("摘要生成失败，静默降级: {}", e.getMessage());
             return null;
         }
     }
 
+    // ==================== 流式模式（SSE /chat/stream 接口） ====================
+
     /**
-     * 构造传给 AI 的 user 内容
-     * 只传前 MAX_SAMPLE_ROWS 行作为样本，避免 token 超限
+     * 流式生成摘要，通过监听器逐 token 推送结论。
+     * <p>
+     * 设计意图：
+     * - 采用非阻塞模式，利用 {@link StreamingChatLanguageModel} 异步驱动。
+     * - 业务逻辑与传输协议解耦，通过 {@link ChatStreamListener} 抽象输出通道。
+     * <p>
+     * 生命周期与异常处理：
+     * - 正常结束：触发 {@code listener.onComplete()}。
+     * - 降级处理：若摘要生成失败（非核心链路故障），将记录 Warn 日志并静默结束，
+     * 确保主业务流程（如 SQL 执行结果展示）不被中断。
+     * - 中断处理：若底层连接断开，回调将捕获异常并终止任务流。
+     *
+     * @param question 用户原始问题，用于对齐上下文。
+     * @param sql      已执行的 SQL，用于提供技术依据。
+     * @param data     查询结果集，仅提取样本以降低 Token 消耗。
+     * @param listener 业务流监听器，用于接收并转发异步生成的 Token。
      */
-    private String buildUserContent(String question, String sql,
-                                    List<Map<String, Object>> data) {
+    public void generateStream(String question, String sql,
+                               List<Map<String, Object>> data, ChatStreamListener listener) {
+        String userContent = buildUserContent(question, sql, data);
+
+        streamingChatLanguageModel.generate(
+                List.of(
+                        SystemMessage.from(SYSTEM_PROMPT),
+                        UserMessage.from(userContent)
+                ),
+                new StreamingResponseHandler<>() {
+                    @Override
+                    public void onNext(String token) {
+                        // 通过监听器推送 token
+                        listener.onSummaryToken(token);
+                    }
+
+                    @Override
+                    public void onComplete(Response<dev.langchain4j.data.message.AiMessage> response) {
+                        // 告知监听器流程结束
+                        listener.onComplete();
+                    }
+
+                    @Override
+                    public void onError(Throwable error) {
+                        log.warn("流式摘要生成失败，静默降级: {}", error.getMessage());
+                        // 即使报错，也推 complete，让前端关闭连接
+                        listener.onComplete();
+                    }
+                }
+        );
+    }
+
+    // ==================== 私有工具方法 ====================
+
+    private String buildUserContent(String question, String sql, List<Map<String, Object>> data) {
         int totalRows = data.size();
-        List<Map<String, Object>> sample = data.stream()
-                .limit(MAX_SAMPLE_ROWS)
-                .toList();
+        List<Map<String, Object>> sample = data.stream().limit(MAX_SAMPLE_ROWS).toList();
 
         StringBuilder sb = new StringBuilder();
         sb.append("用户问题：").append(question).append("\n\n");
@@ -99,7 +150,6 @@ public class NlFeedbackGenerator {
                 sb.append(row).append("\n");
             }
         }
-
         return sb.toString();
     }
 }
