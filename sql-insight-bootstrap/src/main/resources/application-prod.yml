@@ -9,10 +9,18 @@ spring:
       host: ${REDIS_HOST:cache}
       port: 6379
       database: ${REDIS_DB:0}
-
+      timeout: 2000ms
+      password: ${REDIS_PASSWORD}
 langchain4j:
   open-ai:
     chat-model:
       base-url: https://api.deepseek.com
       api-key: ${DEEPSEEK_API_KEY}
-      model-name: deepseek-reasoner
+      model-name: deepseek-chat
+    streaming-chat-model:
+      base-url: https://api.deepseek.com
+      api-key: ${DEEPSEEK_API_KEY}
+      model-name: deepseek-chat
+      temperature: 0.0
+      log-requests: true
+      log-responses: true
