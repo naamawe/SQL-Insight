@@ -2,7 +2,7 @@ package com.xhx.core.service.sql.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.xhx.core.service.sql.ChatMemoryStore;
+import com.xhx.ai.service.ChatMemoryStore;
 import com.xhx.dal.entity.ChatMessageEntity;
 import com.xhx.dal.mapper.ChatMessageMapper;
 import dev.langchain4j.data.message.*;
@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
+ * 对话记忆存储实现
  * @author master
  */
 @Slf4j
@@ -24,14 +25,12 @@ public class ChatMemoryStoreImpl implements ChatMemoryStore {
 
     private final ChatMessageMapper chatMessageMapper;
 
-    /** 每次加载的历史消息条数上限 */
     private static final int MEMORY_SIZE = 10;
 
     @Override
     public List<ChatMessage> getMessages(Object memoryId) {
         Long sessionId = (Long) memoryId;
 
-        // 先倒序取最近 MEMORY_SIZE 条
         Page<ChatMessageEntity> page = chatMessageMapper.selectPage(
                 new Page<>(1, MEMORY_SIZE),
                 new LambdaQueryWrapper<ChatMessageEntity>()
@@ -39,7 +38,6 @@ public class ChatMemoryStoreImpl implements ChatMemoryStore {
                         .orderByDesc(ChatMessageEntity::getCreateTime)
         );
 
-        // 再反转，恢复时间正序后交给 AI
         List<ChatMessageEntity> records = page.getRecords();
         Collections.reverse(records);
 

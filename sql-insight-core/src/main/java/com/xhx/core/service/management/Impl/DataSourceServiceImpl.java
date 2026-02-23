@@ -60,7 +60,6 @@ public class DataSourceServiceImpl implements DataSourceService {
     static {
         DB_DRIVER_MAP.put("mysql", "com.mysql.cj.jdbc.Driver");
         DB_DRIVER_MAP.put("postgresql", "org.postgresql.Driver");
-        DB_DRIVER_MAP.put("oracle", "oracle.jdbc.OracleDriver");
         DB_DRIVER_MAP.put("sqlserver", "com.microsoft.sqlserver.jdbc.SQLServerDriver");
     }
 

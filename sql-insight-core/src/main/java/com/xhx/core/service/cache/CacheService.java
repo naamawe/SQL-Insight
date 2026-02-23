@@ -1,6 +1,6 @@
 package com.xhx.core.service.cache;
 
-import com.xhx.core.model.TableMetadata;
+import com.xhx.common.model.TableMetadata;
 
 import java.util.List;
 import java.util.Set;

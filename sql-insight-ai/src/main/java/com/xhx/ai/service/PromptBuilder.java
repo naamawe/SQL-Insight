@@ -1,4 +1,4 @@
-package com.xhx.core.service.sql;
+package com.xhx.ai.service;
 
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -14,15 +14,18 @@ import java.util.concurrent.ConcurrentHashMap;
  * Prompt 拼装器
  * <p>
  * 职责：
- *   1. 启动时预加载所有 prompt 资源文件到内存（避免每次请求都读磁盘）
- *   2. 根据数据库类型返回对应的 Few-shot 示例文本
- *   3. 将 base prompt、few-shot、schema、policy 拼装成完整的 systemPrompt
+ *   1. 启动时预加载所有 prompt 资源文件到内存
+ *   2. 根据数据库类型选取对应的 Few-shot 示例文本
+ *   3. 将 base template、few-shot、schema、policy 拼装成完整 systemPrompt
  * <p>
- * 资源文件路径（均在 sql-insight-ai/src/main/resources/ 下）：
- *   prompts/system-prompt-base.txt
- *   prompts/few-shot-mysql.txt
- *   prompts/few-shot-postgresql.txt
- *   prompts/few-shot-sqlserver.txt
+ * 资源文件（sql-insight-ai/src/main/resources/prompts/ 下）：
+ *   system-prompt-base.txt
+ *   few-shot-mysql.txt
+ *   few-shot-postgresql.txt
+ *   few-shot-oracle.txt
+ *   few-shot-sqlserver.txt
+ * <p>
+ * 此类属于 AI 能力层，不引入任何业务实体
  *
  * @author master
  */
@@ -49,7 +52,6 @@ public class PromptBuilder {
                 fewShotMap.put(dbType, loadResource(path));
                 log.info("Few-shot 示例加载成功: {}", path);
             } catch (Exception e) {
-                // 示例文件缺失时降级为空，不影响启动
                 log.warn("Few-shot 示例文件缺失，降级为空示例: {}", path);
                 fewShotMap.put(dbType, "");
             }
@@ -59,10 +61,10 @@ public class PromptBuilder {
     /**
      * 拼装完整的 systemPrompt
      *
-     * @param dbType  数据库类型（mysql / postgresql / sqlserver）
-     * @param schema  经过 SchemaLinker 过滤并格式化后的 schema 文本
-     * @param policy  格式化后的 policy 约束文本
-     * @return 完整的 systemPrompt 字符串，直接传给 SqlExecutor.execute()
+     * @param dbType  数据库类型（mysql / postgresql / oracle / sqlserver）
+     * @param schema  经 SchemaLinker 过滤并格式化的 schema 文本
+     * @param policy  格式化后的策略约束文本
+     * @return 完整 systemPrompt，直接传给 SqlExecutor
      */
     public String build(String dbType, String schema, String policy) {
         String fewShot = fewShotMap.getOrDefault(

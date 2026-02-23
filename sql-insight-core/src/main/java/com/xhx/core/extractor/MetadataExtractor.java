@@ -1,6 +1,6 @@
 package com.xhx.core.extractor;
 
-import com.xhx.core.model.TableMetadata;
+import com.xhx.common.model.TableMetadata;
 
 import java.sql.Connection;
 import java.util.List;

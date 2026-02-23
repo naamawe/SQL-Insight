@@ -3,7 +3,7 @@ package com.xhx.core.service.cache.Impl;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.TypeReference;
 import com.xhx.common.constant.SecurityConstants;
-import com.xhx.core.model.TableMetadata;
+import com.xhx.common.model.TableMetadata;
 import com.xhx.core.service.cache.CacheService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

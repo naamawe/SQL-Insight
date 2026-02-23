@@ -1,16 +1,12 @@
 package com.xhx.core.service.sql;
 
-import com.xhx.core.model.TableMetadata;
+import com.xhx.common.model.TableMetadata;
 import com.xhx.dal.entity.DataSource;
 
 import java.util.List;
 
 /**
  * Schema 采集服务
- * 职责拆分：
- *   - getMetadata：从目标库获取结构化元数据（带缓存），供 SchemaLinker 使用
- *   - format：将元数据列表格式化为 AI 可读的 Markdown 文本
- *   - fetchPublicSchema：组合方法，兼容旧调用（内部调 getMetadata + format）
  * @author master
  */
 public interface SchemaCollectorService {

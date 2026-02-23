@@ -1,6 +1,6 @@
 package com.xhx.core.extractor;
 
-import com.xhx.core.model.TableMetadata;
+import com.xhx.common.model.TableMetadata;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;

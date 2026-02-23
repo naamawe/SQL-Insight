@@ -17,8 +17,8 @@ public class DataSourceSaveDTO {
     
     /** 数据库类型：mysql / postgresql / oracle 等 */
     @NotBlank(message = "数据库类型不能为空")
-    @Pattern(regexp = "^(mysql|postgresql|oracle|sqlserver)$", 
-             message = "数据库类型只支持: mysql, postgresql, oracle, sqlserver")
+    @Pattern(regexp = "^(mysql|postgresql|sqlserver)$",
+             message = "数据库类型只支持: mysql, postgresql, sqlserver")
     private String dbType;
     
     /** 主机地址 */

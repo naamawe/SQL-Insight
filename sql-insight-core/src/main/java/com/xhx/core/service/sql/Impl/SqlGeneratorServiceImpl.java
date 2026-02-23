@@ -2,15 +2,15 @@ package com.xhx.core.service.sql.Impl;
 
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.xhx.ai.service.PromptBuilder;
+import com.xhx.ai.service.SchemaLinker;
+import com.xhx.ai.service.SqlExecutor;
 import com.xhx.common.exception.NotExistException;
 import com.xhx.common.exception.ServiceException;
-import com.xhx.core.model.TableMetadata;
+import com.xhx.common.model.TableMetadata;
 import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.cache.PermissionLoader;
-import com.xhx.core.service.sql.PromptBuilder;
 import com.xhx.core.service.sql.SchemaCollectorService;
-import com.xhx.core.service.sql.SchemaLinker;
-import com.xhx.core.service.sql.SqlExecutor;
 import com.xhx.core.service.sql.SqlGeneratorService;
 import com.xhx.core.service.sql.SqlSecurityService;
 import com.xhx.dal.entity.ChatSession;
@@ -28,6 +28,14 @@ import java.util.List;
 import java.util.Set;
 
 /**
+ * SQL 生成服务实现
+ * <p>
+ * 职责：业务编排
+ *   1. 鉴权：从缓存加载用户权限，确定可访问的表
+ *   2. Schema 准备：采集元数据 → SchemaLinker 过滤 → format 成 Prompt 文本
+ *   3. AI 调用：委托给 ai 模块的 SqlExecutor（不直接使用 LangChain4j API）
+ *   4. 安全校验：AI 返回后再次验证权限和策略
+ * <p>
  * @author master
  */
 @Slf4j
@@ -37,10 +45,12 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
 
     private final DataSourceMapper dataSourceMapper;
     private final ChatSessionMapper chatSessionMapper;
+
     private final SqlExecutor sqlExecutor;
-    private final SchemaCollectorService schemaCollectorService;
-    private final SchemaLinker schemaLinker;
     private final PromptBuilder promptBuilder;
+    private final SchemaLinker schemaLinker;
+
+    private final SchemaCollectorService schemaCollectorService;
     private final SqlSecurityService sqlSecurityService;
     private final PermissionLoader permissionLoader;
     private final CacheService cacheService;
@@ -50,16 +60,14 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
     public String generate(Long userId, Long sessionId, String question) {
         GenerateContext ctx = buildContext(userId, sessionId, question);
 
-        // 调用 AI 生成 SQL
         log.info("调用 AI，userId: {}, dbType: {}, 相关表: {}",
                 userId, ctx.dbType(),
                 ctx.linkedMetadata().stream().map(TableMetadata::getTableName).toList());
+
         String response = sqlExecutor.execute(sessionId, ctx.systemPrompt(), question);
         String cleanedSql = cleanSql(response);
 
-        // 安全校验
         validateSql(cleanedSql, userId, ctx.dataSourceId());
-
         return cleanedSql;
     }
 
@@ -79,24 +87,20 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
         }
 
         Long roleId = getRoleId(userId);
-        String systemPrompt = buildSystemPrompt(userId, roleId, session.getDataSourceId(), dsConfig);
+        // correct 时不做 Schema Linking，传全量 schema 确保纠错信息完整
+        String systemPrompt = buildSystemPromptWithFullSchema(
+                userId, roleId, session.getDataSourceId(), dsConfig);
 
-        // 调用 AI 纠错
         String response = sqlExecutor.executeWithCorrection(
                 sessionId, systemPrompt, errorMessage, wrongSql);
         String cleanedSql = cleanSql(response);
 
-        // 纠错后同样需要安全校验
         validateSql(cleanedSql, userId, session.getDataSourceId());
-
         return cleanedSql;
     }
 
     // ==================== 私有工具方法 ====================
 
-    /**
-     * 构造生成 SQL 所需的完整上下文
-     */
     private GenerateContext buildContext(Long userId, Long sessionId, String question) {
         ChatSession session = chatSessionMapper.selectOne(
                 new LambdaQueryWrapper<ChatSession>()
@@ -133,30 +137,21 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
         log.info("Schema Linking：全量 {} 张表 → 相关 {} 张表",
                 allMetadata.size(), linkedMetadata.size());
 
-        String systemPrompt = buildSystemPrompt(userId, roleId, dsConfig,
-                linkedMetadata);
-
+        String systemPrompt = buildSystemPrompt(userId, roleId, dsConfig, linkedMetadata);
         return new GenerateContext(dataSourceId, dsConfig.getDbType(), linkedMetadata, systemPrompt);
     }
 
-    /**
-     * 构造 systemPrompt（generate 流程使用，需要传入 linkedMetadata）
-     */
     private String buildSystemPrompt(Long userId, Long roleId,
-                                     DataSource dsConfig, List<TableMetadata> linkedMetadata) {
-        String schemaText = schemaCollectorService.format(linkedMetadata);
+                                     DataSource dsConfig, List<TableMetadata> metadata) {
+        String schemaText = schemaCollectorService.format(metadata);
         String policyJson = permissionLoader.loadPolicy(userId, roleId);
         QueryPolicy policyEntity = policyJson != null
                 ? JSON.parseObject(policyJson, QueryPolicy.class) : null;
-        String policyText = formatPolicy(policyEntity);
-        return promptBuilder.build(dsConfig.getDbType(), schemaText, policyText);
+        return promptBuilder.build(dsConfig.getDbType(), schemaText, formatPolicy(policyEntity));
     }
 
-    /**
-     * 构造 systemPrompt（correct 流程使用，重新加载全量 schema）
-     */
-    private String buildSystemPrompt(Long userId, Long roleId, Long dataSourceId,
-                                     DataSource dsConfig) {
+    private String buildSystemPromptWithFullSchema(Long userId, Long roleId,
+                                                   Long dataSourceId, DataSource dsConfig) {
         Set<String> allPerms = permissionLoader.loadPermissions(userId, roleId);
         List<String> allowedTables = allPerms.stream()
                 .filter(p -> p.startsWith(dataSourceId + ":"))

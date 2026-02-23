@@ -1,4 +1,4 @@
-package com.xhx.core.model;
+package com.xhx.common.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

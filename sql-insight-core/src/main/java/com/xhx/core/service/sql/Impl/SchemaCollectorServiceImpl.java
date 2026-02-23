@@ -1,7 +1,7 @@
 package com.xhx.core.service.sql.Impl;
 
+import com.xhx.common.model.TableMetadata;
 import com.xhx.core.extractor.MetadataExtractorRouter;
-import com.xhx.core.model.TableMetadata;
 import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.sql.SchemaCollectorService;
 import com.xhx.dal.config.DynamicDataSourceManager;
@@ -19,15 +19,6 @@ import java.util.stream.Collectors;
 
 /**
  * Schema 采集服务实现
- * <p>
- * 缓存策略：
- *   缓存结构化的 List<TableMetadata>（JSON 序列化存 Redis）
- *   格式化（format）在 SchemaLinker 过滤之后执行，不进缓存
- * <p>
- * 多数据库支持：
- *   通过 MetadataExtractorRouter 按 dbType 路由到对应提取器
- *   各数据库注释获取方式差异由各自的 Extractor 实现封装
- *
  * @author master
  */
 @Slf4j
@@ -45,28 +36,22 @@ public class SchemaCollectorServiceImpl implements SchemaCollectorService {
             return Collections.emptyList();
         }
 
-        // 排序后生成 hash，相同权限组合命中同一份缓存
         List<String> sortedTables = allowedTables.stream().sorted().toList();
         String permHash = Integer.toHexString(sortedTables.hashCode());
 
-        // 查缓存
         List<TableMetadata> cached = cacheService.getSchemaMetadata(dsConfig.getId(), permHash);
         if (cached != null) {
             log.debug("Schema 元数据缓存命中，数据源: {}, hash: {}", dsConfig.getId(), permHash);
             return cached;
         }
 
-        // 缓存未命中，查目标库
         log.info("Schema 元数据缓存未命中，从目标库加载，数据源: {} [{}], 表数量: {}",
                 dsConfig.getConnName(), dsConfig.getDbType(), sortedTables.size());
 
         javax.sql.DataSource dataSource = dataSourceManager.getDataSource(dsConfig);
         try (Connection conn = dataSource.getConnection()) {
-            // 通过 Router 按 dbType 路由到对应的 Extractor
             List<TableMetadata> metadata = metadataExtractorRouter.extract(
                     dsConfig.getDbType(), conn, sortedTables);
-
-            // 回填缓存
             cacheService.putSchemaMetadata(dsConfig.getId(), permHash, metadata);
             return metadata;
         } catch (SQLException e) {

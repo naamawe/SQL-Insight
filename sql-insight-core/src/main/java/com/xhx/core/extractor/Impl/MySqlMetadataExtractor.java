@@ -1,8 +1,8 @@
 package com.xhx.core.extractor.Impl;
 
 import com.xhx.core.extractor.MetadataExtractor;
-import com.xhx.core.model.ColumnMetadata;
-import com.xhx.core.model.TableMetadata;
+import com.xhx.common.model.ColumnMetadata;
+import com.xhx.common.model.TableMetadata;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
