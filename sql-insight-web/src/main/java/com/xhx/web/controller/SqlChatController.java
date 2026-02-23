@@ -1,6 +1,7 @@
 package com.xhx.web.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.xhx.ai.service.NlFeedbackGenerator;
 import com.xhx.common.context.UserContext;
 import com.xhx.common.exception.ServiceException;
 import com.xhx.common.result.Result;
@@ -33,6 +34,7 @@ public class SqlChatController {
     private final SqlGeneratorService sqlGeneratorService;
     private final SqlExecutorService sqlExecutorService;
     private final ChatSessionService chatSessionService;
+    private final NlFeedbackGenerator nlFeedbackGenerator;
 
     /**
      * AI 对话
@@ -42,6 +44,7 @@ public class SqlChatController {
      *   2. 执行 SQL
      *   3. 执行失败 → Self-correction 重试一次
      *   4. 重试仍失败 → 返回错误信息给用户
+     *   5. 执行成功 → 异步生成自然语言摘要（失败时静默降级）
      * <p>
      * 安全说明：
      *   新会话时 dataSourceId 由前端传入用于创建 session
@@ -73,7 +76,9 @@ public class SqlChatController {
         // 第一次执行
         try {
             List<Map<String, Object>> data = sqlExecutorService.execute(dsId, sql);
-            return Result.success(new SqlChatResponse(sessionId, sql, data));
+            String summary = nlFeedbackGenerator.generate(question, sql, data);
+            return Result.success(buildResponse(sessionId, sql, data, summary));
+
         } catch (Exception firstError) {
             log.warn("SQL 首次执行失败，触发 Self-correction，sessionId: {}, error: {}",
                     sessionId, firstError.getMessage());
@@ -84,8 +89,9 @@ public class SqlChatController {
                         userId, sessionId, firstError.getMessage(), sql);
 
                 List<Map<String, Object>> data = sqlExecutorService.execute(dsId, correctedSql);
+                String summary = nlFeedbackGenerator.generate(question, correctedSql, data);
                 log.info("Self-correction 成功，sessionId: {}", sessionId);
-                return Result.success(new SqlChatResponse(sessionId, correctedSql, data));
+                return Result.success(buildResponse(sessionId, correctedSql, data, summary));
 
             } catch (Exception secondError) {
                 // 重试仍失败，返回友好错误信息
@@ -129,5 +135,18 @@ public class SqlChatController {
     public Result<Void> batchDeleteSessions(@RequestBody List<Long> sessionIds) {
         chatSessionService.batchDeleteSessions(UserContext.getUserId(), sessionIds);
         return Result.success("批量删除成功", null);
+    }
+
+    // ==================== 私有工具方法 ====================
+
+    private SqlChatResponse buildResponse(Long sessionId, String sql,
+                                          List<Map<String, Object>> data, String summary) {
+        return SqlChatResponse.builder()
+                .sessionId(sessionId)
+                .sql(sql)
+                .data(data)
+                .total(data.size())
+                .summary(summary)
+                .build();
     }
 }
