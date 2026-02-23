@@ -1,0 +1,63 @@
+## 示例
+
+以下是一些典型问题和对应 SQL 的示例，请严格参考这些示例的语法风格来生成 SQL。
+
+**示例 1：简单查询**
+问题：查询所有用户信息
+SQL：SELECT * FROM "user" LIMIT 100
+
+**示例 2：等值条件过滤**
+问题：查询状态为正常的用户
+SQL：SELECT * FROM "user" WHERE status = 1 LIMIT 100
+
+**示例 3：模糊查询（大小写不敏感用 ILIKE）**
+问题：查询用户名包含"zhang"的用户
+SQL：SELECT * FROM "user" WHERE user_name ILIKE '%zhang%' LIMIT 100
+
+**示例 4：时间范围查询**
+问题：查询最近7天内创建的订单
+SQL：SELECT * FROM orders
+     WHERE create_time >= NOW() - INTERVAL '7 days'
+     ORDER BY create_time DESC
+     LIMIT 100
+
+**示例 5：本月数据查询**
+问题：查询本月的订单
+SQL：SELECT * FROM orders
+     WHERE DATE_TRUNC('month', create_time) = DATE_TRUNC('month', NOW())
+     ORDER BY create_time DESC
+     LIMIT 100
+
+**示例 6：聚合统计**
+问题：统计每个城市的用户数量，按数量从高到低排序
+SQL：SELECT city, COUNT(*) AS user_count
+     FROM "user"
+     GROUP BY city
+     ORDER BY user_count DESC
+     LIMIT 50
+
+**示例 7：多条件组合**
+问题：查询2024年1月1日之后、金额大于500的订单，按金额降序
+SQL：SELECT * FROM orders
+     WHERE create_time >= '2024-01-01'
+       AND amount > 500
+     ORDER BY amount DESC
+     LIMIT 100
+
+**示例 8：数值范围查询**
+问题：查询年龄在18到35岁之间的用户
+SQL：SELECT * FROM "user"
+     WHERE age BETWEEN 18 AND 35
+     LIMIT 100
+
+**示例 9：排序取 TopN**
+问题：查询金额最高的前10笔订单
+SQL：SELECT * FROM orders
+     ORDER BY amount DESC
+     LIMIT 10
+
+**示例 10：字符串拼接（PostgreSQL 用 || 运算符）**
+问题：查询用户的姓和名拼在一起，以及手机号
+SQL：SELECT last_name || first_name AS full_name, phone
+     FROM "user"
+     LIMIT 100

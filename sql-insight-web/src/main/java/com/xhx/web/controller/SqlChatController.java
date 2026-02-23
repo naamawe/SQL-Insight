@@ -2,6 +2,7 @@ package com.xhx.web.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xhx.common.context.UserContext;
+import com.xhx.common.exception.ServiceException;
 import com.xhx.common.result.Result;
 import com.xhx.core.model.dto.SqlChatResponse;
 import com.xhx.core.service.sql.ChatSessionService;
@@ -36,10 +37,15 @@ public class SqlChatController {
     /**
      * AI 对话
      * <p>
+     * 流程：
+     *   1. 生成 SQL
+     *   2. 执行 SQL
+     *   3. 执行失败 → Self-correction 重试一次
+     *   4. 重试仍失败 → 返回错误信息给用户
+     * <p>
      * 安全说明：
-     * - 新会话时，dataSourceId 由前端传入，用于创建 session 并绑定
-     * - 续会话时，dataSourceId 从 session 里取，不信任前端重复传入的值
-     *   这样可防止用户篡改 dataSourceId 越权访问其他数据源
+     *   新会话时 dataSourceId 由前端传入用于创建 session
+     *   续会话时 dataSourceId 从 session 里取，不信任前端传入的值，防止越权
      */
     @PostMapping("/chat")
     public Result<SqlChatResponse> chat(
@@ -57,26 +63,52 @@ public class SqlChatController {
             sessionId = chatSessionService.createSession(userId, dataSourceId, question);
         }
 
-        // 生成 SQL（内部使用 session 绑定的 dataSourceId，不使用前端传入的值）
-        String generatedSql = sqlGeneratorService.generate(userId, sessionId, question);
-
-        // 从 session 中取出 dataSourceId 执行，防止前端篡改
+        // 从 session 取 dataSourceId，防止前端篡改
         ChatSession session = chatSessionService.getSessionDetail(userId, sessionId);
-        List<Map<String, Object>> data = sqlExecutorService.execute(session.getDataSourceId(), generatedSql);
+        Long dsId = session.getDataSourceId();
 
-        return Result.success(new SqlChatResponse(sessionId, generatedSql, data));
+        // 第一次生成 SQL
+        String sql = sqlGeneratorService.generate(userId, sessionId, question);
+
+        // 第一次执行
+        try {
+            List<Map<String, Object>> data = sqlExecutorService.execute(dsId, sql);
+            return Result.success(new SqlChatResponse(sessionId, sql, data));
+        } catch (Exception firstError) {
+            log.warn("SQL 首次执行失败，触发 Self-correction，sessionId: {}, error: {}",
+                    sessionId, firstError.getMessage());
+
+            // Self-correction：把错误信息传给 generator 重新生成
+            try {
+                String correctedSql = sqlGeneratorService.correct(
+                        userId, sessionId, firstError.getMessage(), sql);
+
+                List<Map<String, Object>> data = sqlExecutorService.execute(dsId, correctedSql);
+                log.info("Self-correction 成功，sessionId: {}", sessionId);
+                return Result.success(new SqlChatResponse(sessionId, correctedSql, data));
+
+            } catch (Exception secondError) {
+                // 重试仍失败，返回友好错误信息
+                log.error("Self-correction 后仍失败，sessionId: {}, error: {}",
+                        sessionId, secondError.getMessage());
+                throw new ServiceException(500,
+                        "SQL 执行失败，请尝试换一种问法：" + secondError.getMessage());
+            }
+        }
     }
 
     @GetMapping("/sessions")
     public Result<Page<ChatSession>> getSessions(
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "10") int size) {
-        return Result.success(chatSessionService.getUserSessions(UserContext.getUserId(), current, size));
+        return Result.success(chatSessionService.getUserSessions(
+                UserContext.getUserId(), current, size));
     }
 
     @GetMapping("/sessions/{sessionId}")
     public Result<ChatSession> getSessionDetail(@PathVariable Long sessionId) {
-        return Result.success(chatSessionService.getSessionDetail(UserContext.getUserId(), sessionId));
+        return Result.success(chatSessionService.getSessionDetail(
+                UserContext.getUserId(), sessionId));
     }
 
     @PutMapping("/sessions/{sessionId}/title")

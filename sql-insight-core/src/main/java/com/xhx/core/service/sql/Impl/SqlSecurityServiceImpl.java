@@ -3,7 +3,9 @@ package com.xhx.core.service.sql.Impl;
 import com.alibaba.fastjson2.JSON;
 import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.sql.SqlSecurityService;
+import com.xhx.dal.entity.DataSource;
 import com.xhx.dal.entity.QueryPolicy;
+import com.xhx.dal.mapper.DataSourceMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
@@ -24,6 +26,8 @@ import java.util.Set;
 public class SqlSecurityServiceImpl implements SqlSecurityService {
 
     private final CacheService cacheService;
+    private final DataSourceMapper dataSourceMapper;
+
     @Override
     public void validate(String sql, Long userId, Long dataSourceId) {
         log.info("[安全审计] userId: {}, dsId: {}, sql: {}", userId, dataSourceId, sql);
@@ -38,7 +42,13 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
                     .toList();
 
             checkTableAccess(userId, dataSourceId, tableNames);
-            checkPolicy(userId, sql);
+
+            // 查出 dbType，用于行数限制的方言适配
+            DataSource dsConfig = dataSourceMapper.selectById(dataSourceId);
+            String dbType = dsConfig != null ? dsConfig.getDbType().toLowerCase() : "mysql";
+
+            checkPolicy(userId, sql, dbType);
+
         } catch (Exception e) {
             log.error("[审计未通过] {}", e.getMessage());
             throw new RuntimeException("SQL 安全风险拦截: " + e.getMessage());
@@ -47,7 +57,6 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
 
     /**
      * 对比 Redis 中的表权限快照
-     * Redis 中存储格式为：{dataSourceId}:{tableName}:{PERMISSION}，例如 "1:orders:SELECT"
      */
     private void checkTableAccess(Long userId, Long dataSourceId, List<String> tableNames) {
         Set<String> allPerms = cacheService.getUserPermissions(userId);
@@ -64,8 +73,9 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
 
     /**
      * 对比 Redis 中的策略 JSON
+     * 行数限制检查按数据库方言区分：
      */
-    private void checkPolicy(Long userId, String sql) {
+    private void checkPolicy(Long userId, String sql, String dbType) {
         String policyJson = cacheService.getUserPolicy(userId);
         if (policyJson == null || "NO_POLICY".equals(policyJson)) {
             return;
@@ -83,9 +93,23 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
         if (policy.getAllowAggregation() == 0 && isAggregation(upper)) {
             throw new RuntimeException("当前策略禁止执行聚合统计");
         }
-        if (!upper.contains("LIMIT")) {
-            throw new RuntimeException("必须包含 LIMIT，最大允许 " + policy.getMaxLimit() + " 行");
+
+        // 行数限制检查：按方言判断是否存在限制关键字
+        if (!hasRowLimit(upper, dbType)) {
+            throw new RuntimeException("必须包含行数限制，最大允许 "
+                    + policy.getMaxLimit() + " 行");
         }
+    }
+
+    /**
+     * 判断 SQL 是否包含行数限制，按数据库方言区分
+     */
+    private boolean hasRowLimit(String upperSql, String dbType) {
+        return switch (dbType) {
+            case "oracle"    -> upperSql.contains("FETCH FIRST") || upperSql.contains("ROWNUM");
+            case "sqlserver" -> upperSql.contains("TOP ");
+            default          -> upperSql.contains("LIMIT");
+        };
     }
 
     private boolean isSubquery(String sql) {
@@ -93,6 +117,9 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
     }
 
     private boolean isAggregation(String sql) {
-        return sql.contains("COUNT(") || sql.contains("SUM(") || sql.contains("AVG(") || sql.contains("MAX(");
+        return sql.contains("COUNT(")
+                || sql.contains("SUM(")
+                || sql.contains("AVG(")
+                || sql.contains("MAX(");
     }
 }
