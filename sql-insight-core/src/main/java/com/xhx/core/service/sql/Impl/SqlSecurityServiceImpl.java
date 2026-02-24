@@ -1,6 +1,7 @@
 package com.xhx.core.service.sql.Impl;
 
 import com.alibaba.fastjson2.JSON;
+import com.xhx.common.util.CommonUtil;
 import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.sql.SqlSecurityService;
 import com.xhx.dal.entity.DataSource;
@@ -31,6 +32,12 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
     @Override
     public void validate(String sql, Long userId, Long dataSourceId) {
         log.info("[安全审计] userId: {}, dsId: {}, sql: {}", userId, dataSourceId, sql);
+
+        if (CommonUtil.isExplain(sql)) {
+            log.info("[安全审计] 无权限表，跳过 SQL 审计");
+            return;
+        }
+
         try {
             Statement statement = CCJSqlParserUtil.parse(sql);
 

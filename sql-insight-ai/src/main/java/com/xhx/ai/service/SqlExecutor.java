@@ -1,5 +1,7 @@
 package com.xhx.ai.service;
 
+import com.xhx.ai.model.AiResponse;
+import com.xhx.common.util.CommonUtil;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -41,19 +43,24 @@ public class SqlExecutor {
      * @param question     用户原始问题
      * @return AI 返回的原始文本
      */
-    public String execute(Long sessionId, String systemPrompt, String question) {
+    public AiResponse execute(Long sessionId, String systemPrompt, String question) {
         List<ChatMessage> history = chatMemoryStore.getMessages(sessionId);
-        List<ChatMessage> messages = buildMessages(
-                systemPrompt, history, UserMessage.from(question));
-
-        log.debug("正常对话，history: {} 条，总消息数（含 system）: {}",
-                history.size(), messages.size());
+        List<ChatMessage> messages = buildMessages(systemPrompt, history, UserMessage.from(question));
 
         AiMessage aiReply = callAi(messages);
-        persistTurn(sessionId, history, UserMessage.from(question), aiReply);
+        String raw = aiReply.text();
 
-        log.info("AI 响应完成，sessionId: {}", sessionId);
-        return aiReply.text();
+        String cleaned = CommonUtil.cleanSql(raw);
+        boolean isExplain = cleaned.startsWith("[EXPLAIN]");
+
+        String contentToSave = isExplain ? cleaned.replace("[EXPLAIN]", "").trim() : cleaned;
+
+        chatMemoryStore.updateMessages(sessionId, List.of(UserMessage.from(question)));
+        chatMemoryStore.updateMessages(sessionId, List.of(AiMessage.from(contentToSave)));
+
+        log.info("AI 响应完成，原始长度: {}, 记忆长度: {}", raw.length(), contentToSave.length());
+
+        return new AiResponse(raw, cleaned, isExplain);
     }
 
     /**
@@ -68,31 +75,35 @@ public class SqlExecutor {
      * @param wrongSql     上一次生成的错误 SQL
      * @return AI 修正后的 SQL 文本
      */
-    public String executeWithCorrection(Long sessionId, String systemPrompt,
-                                        String errorMessage, String wrongSql) {
+    public AiResponse executeWithCorrection(Long sessionId, String systemPrompt,
+                                            String errorMessage, String wrongSql) {
         log.warn("SQL 执行失败，触发 Self-correction，sessionId: {}, error: {}",
                 sessionId, errorMessage);
 
         List<ChatMessage> history = chatMemoryStore.getMessages(sessionId);
 
+        // 构造纠错请求
         String correctionPrompt = """
-                你上一次生成的 SQL 执行报错了，请修正后只返回正确的 SQL，不要包含任何解释。
+            你上一次生成的 SQL 执行报错了，请修正。
+            错误的 SQL：%s
+            报错信息：%s""".formatted(wrongSql, errorMessage);
 
-                错误的 SQL：
-                %s
+        List<ChatMessage> messages = buildMessages(systemPrompt, history, UserMessage.from(correctionPrompt));
 
-                报错信息：
-                %s""".formatted(wrongSql, errorMessage);
-
-        List<ChatMessage> messages = buildMessages(
-                systemPrompt, history, UserMessage.from(correctionPrompt));
-
-        log.debug("纠错对话，history: {} 条，总消息数（含 system）: {}",
-                history.size(), messages.size());
-
+        // 调用 AI
         AiMessage aiReply = callAi(messages);
-        log.info("Self-correction 完成，sessionId: {}", sessionId);
-        return aiReply.text();
+        String raw = aiReply.text();
+        String cleaned = CommonUtil.cleanSql(raw);
+        boolean isExplain = cleaned.startsWith("[EXPLAIN]");
+
+        String contentToSave = isExplain ? cleaned.replace("[EXPLAIN]", "").trim() : cleaned;
+
+        chatMemoryStore.updateMessages(sessionId, List.of(UserMessage.from("修正之前的查询错误")));
+        chatMemoryStore.updateMessages(sessionId, List.of(AiMessage.from(contentToSave)));
+
+        log.info("Self-correction 完成并已存入记忆，sessionId: {}", sessionId);
+
+        return new AiResponse(raw, cleaned, isExplain);
     }
 
     // ==================== 私有工具方法 ====================
@@ -112,18 +123,5 @@ public class SqlExecutor {
         return response.content();
     }
 
-    /**
-     * 持久化一轮对话（user + ai 各存一次）
-     * ChatMemoryStoreImpl.updateMessages 只取列表最后一条存入 DB，分两次调用
-     */
-    private void persistTurn(Long sessionId, List<ChatMessage> history,
-                             UserMessage userMessage, AiMessage aiMessage) {
-        List<ChatMessage> userTurn = new ArrayList<>(history);
-        userTurn.add(userMessage);
-        chatMemoryStore.updateMessages(sessionId, userTurn);
 
-        List<ChatMessage> aiTurn = new ArrayList<>(userTurn);
-        aiTurn.add(aiMessage);
-        chatMemoryStore.updateMessages(sessionId, aiTurn);
-    }
 }

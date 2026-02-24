@@ -2,6 +2,7 @@ package com.xhx.core.service.sql.Impl;
 
 import com.xhx.ai.service.NlFeedbackGenerator;
 import com.xhx.ai.listener.ChatStreamListener;
+import com.xhx.common.util.CommonUtil;
 import com.xhx.core.service.sql.ChatSessionService;
 import com.xhx.core.service.sql.SqlChatApiService;
 import com.xhx.core.service.sql.SqlExecutorService;
@@ -39,6 +40,19 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
 
             listener.onStage("正在生成 SQL...");
             String sql = sqlGeneratorService.generate(userId, finalSessionId, question);
+
+            if (CommonUtil.isExplain(sql)) {
+                log.info("检测到非 SQL 解释内容，跳过执行环节直接返回");
+
+                // 剥离标签
+                String warmMessage = sql.replace("[EXPLAIN]", "").trim();
+
+                listener.onStage("AI 提示");
+                listener.onSummaryToken(warmMessage);
+
+                listener.onComplete();
+                return;
+            }
             listener.onSql(sql, false);
             List<Map<String, Object>> data = executeWithRetry(userId, finalSessionId, dsId, sql, listener);
             listener.onData(data, finalSessionId);

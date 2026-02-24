@@ -25,7 +25,7 @@ public class AliyunEmbeddingService {
     /**
      * 将文本转化为向量
      * @param text 用户问题或表描述
-     * @return 1536维的 Float 向量列表
+     * @return 1024维的 Float 向量列表
      */
     public List<Float> getVector(String text) {
         try {
@@ -42,7 +42,6 @@ public class AliyunEmbeddingService {
                 throw new RuntimeException("AI Embedding 返回结果为空");
             }
 
-            // 核心步骤：Double -> Float 转换，因为 Qdrant 存储索引通常使用 float32
             return result.getOutput().getEmbeddings().get(0).getEmbedding()
                     .stream()
                     .map(Double::floatValue)

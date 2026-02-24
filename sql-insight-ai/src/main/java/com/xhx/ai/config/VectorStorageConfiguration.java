@@ -15,9 +15,11 @@ public class VectorStorageConfiguration {
 
     @Bean(destroyMethod = "close")
     public QdrantClient qdrantClient(QdrantProperties properties) {
+        // 关闭 tls
         QdrantGrpcClient grpcClient = QdrantGrpcClient.newBuilder(
                         properties.getHost(),
-                        properties.getPort())
+                        properties.getPort(),
+                        false)
                 .build();
 
         return new QdrantClient(grpcClient);

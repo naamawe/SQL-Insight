@@ -2,6 +2,7 @@ package com.xhx.core.service.sql;
 
 /**
  * SQL 安全校验服务接口
+ * @author master
  */
 public interface SqlSecurityService {
 
