@@ -96,7 +96,7 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
         log.info("Schema Linking：全量 {} 张 → 相关 {} 张", allMeta.size(), linked.size());
 
         String systemPrompt = buildSystemPrompt(userId, roleId, dsConfig, linked);
-        return new GenerateContext(systemPrompt, dataSourceId, dsConfig.getDbType(), linked);
+        return new GenerateContext(dsConfig.getDbType(), dataSourceId, systemPrompt, linked);
     }
 
     private List<TableMetadata> fullMetadata(Long userId, Long roleId,

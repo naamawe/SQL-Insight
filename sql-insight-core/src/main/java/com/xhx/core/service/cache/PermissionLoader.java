@@ -123,7 +123,7 @@ public class PermissionLoader {
         );
 
         Set<String> permSet = perms.stream()
-                .map(p -> p.getDataSourceId() + ":" + p.getTableName() + ":" + p.getPermission())
+                .map(p -> p.getDataSourceId() + ":" + p.getTableName().toLowerCase() + ":" + p.getPermission())
                 .collect(Collectors.toSet());
 
         // 同时加载策略
