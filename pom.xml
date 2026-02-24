@@ -29,8 +29,11 @@
         <fastjson2.version>2.0.40</fastjson2.version>
         <jsqlparser.version>4.7</jsqlparser.version>
         <guava.version>33.0.0-jre</guava.version>
+        <dashscope.version>2.14.0</dashscope.version>
+        <qdrant.version>1.10.0</qdrant.version>
+        <grpc.version>1.54.0</grpc.version>
+        <protobuf.version>3.25.5</protobuf.version>
     </properties>
-
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -102,6 +105,36 @@
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
                 <version>${guava.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba</groupId>
+                <artifactId>dashscope-sdk-java</artifactId>
+                <version>${dashscope.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.qdrant</groupId>
+                <artifactId>client</artifactId>
+                <version>${qdrant.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-api</artifactId>
+                <version>${grpc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-netty-shaded</artifactId>
+                <version>${grpc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java</artifactId>
+                <version>${protobuf.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java-util</artifactId>
+                <version>${protobuf.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
