@@ -38,3 +38,7 @@ application-local.yml
 .project
 .settings/
 .classpath
+
+# Frontend
+sql-insight-frontend/node_modules/
+sql-insight-frontend/dist/
