@@ -1,0 +1,69 @@
+/* =============================================
+   Claude 风格设计 Token
+   ============================================= */
+:root {
+  /* --- 主色板 --- */
+  --color-bg-primary: #faf9f7;       /* 主内容区：温暖米白 */
+  --color-bg-sidebar: #2d2a27;       /* 侧边栏：深棕灰 */
+  --color-bg-sidebar-hover: #3d3a37; /* 侧边栏 hover */
+  --color-bg-sidebar-active: #4a4642;/* 侧边栏选中 */
+  --color-bg-surface: #ffffff;       /* 卡片/浮层背景 */
+  --color-bg-input: #f5f4f2;         /* 输入框背景 */
+  --color-bg-code: #1e1e1e;          /* 代码块背景 */
+  --color-bg-user-msg: #f0ece4;      /* 用户消息气泡 */
+
+  /* --- 文字色 --- */
+  --color-text-primary: #1a1916;     /* 主要文字 */
+  --color-text-secondary: #6b6760;   /* 次要文字 */
+  --color-text-disabled: #b0ada8;    /* 禁用/占位 */
+  --color-text-sidebar: #e8e4de;     /* 侧边栏文字 */
+  --color-text-sidebar-muted: #9d9890;
+
+  /* --- 强调色（琥珀橙） --- */
+  --color-accent: #d97706;
+  --color-accent-light: #f59e0b;
+  --color-accent-bg: #fef3c7;
+
+  /* --- 边框 --- */
+  --color-border: #e8e4de;
+  --color-border-strong: #d0ccc6;
+
+  /* --- 功能色 --- */
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-error: #dc2626;
+  --color-info: #2563eb;
+
+  /* --- 阴影 --- */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+  /* --- 圆角 --- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+
+  /* --- 间距 --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* --- 布局 --- */
+  --sidebar-width: 260px;
+  --topbar-height: 56px;
+
+  /* --- 字体 --- */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+               'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Fira Code', 'JetBrains Mono', 'Source Code Pro', Consolas, monospace;
+
+  /* --- 过渡 --- */
+  --transition-fast: 150ms ease;
+  --transition-base: 250ms ease;
+}

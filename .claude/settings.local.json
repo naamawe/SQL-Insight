@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"c:/Users/master/IdeaProjects/SQL-Insight/frontend/src/views/datasource/DataSourceView.vue\":*)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(\"c:/Users/master/IdeaProjects/SQL-Insight/frontend/src/views/user/UserView.vue\":*)",
+      "Bash(\"c:/Users/master/IdeaProjects/SQL-Insight/frontend/src/views/permission/PermissionView.vue\":*)"
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+@import './variables.css';
+@import './reset.css';
+
+/* ElMessage 显示在 dialog 之上 */
+.el-message {
+  z-index: 9999 !important;
+}
