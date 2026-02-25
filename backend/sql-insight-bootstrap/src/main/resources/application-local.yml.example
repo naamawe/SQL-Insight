@@ -1,0 +1,51 @@
+# ==============================================================
+# 本地开发环境配置模板
+# 使用步骤：
+#   1. 复制本文件，重命名为 application-local.yml
+#   2. 填入你本地或测试环境的真实值
+#   3. application-local.yml 已被 .gitignore 排除，不会提交到 Git
+# ==============================================================
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:sql_insight}?useSSL=false&serverTimezone=UTC&characterEncoding=utf-8
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:your_mysql_password}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DB:0}
+      timeout: 2000ms
+      password: ${REDIS_PASSWORD:your_redis_password}
+
+langchain4j:
+  open-ai:
+    chat-model:
+      base-url: https://api.deepseek.com
+      api-key: ${DEEPSEEK_API_KEY:sk-your_deepseek_api_key}
+      model-name: deepseek-chat
+      temperature: 0.0
+    streaming-chat-model:
+      base-url: https://api.deepseek.com
+      api-key: ${DEEPSEEK_API_KEY:sk-your_deepseek_api_key}
+      model-name: deepseek-chat
+      temperature: 0.0
+      log-requests: true
+      log-responses: true
+
+aliyun:
+  dashscope:
+    api-key: ${DASH_SCOPE_API_KEY:sk-your_dashscope_api_key}
+    model: text-embedding-v3
+
+qdrant:
+  host: ${QDRANT_HOST:localhost}
+  port: ${QDRANT_PORT:6334}
+  collection-name: table_schema
+
+# 数据源密码加密密钥（AES-256，32字节Base64编码）
+# 生成命令：openssl rand -base64 32
+ds:
+  encrypt-key: ${DS_ENCRYPT_KEY:your_base64_encoded_32byte_key}

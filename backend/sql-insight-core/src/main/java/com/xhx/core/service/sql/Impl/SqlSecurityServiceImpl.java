@@ -9,13 +9,16 @@ import com.xhx.dal.entity.QueryPolicy;
 import com.xhx.dal.mapper.DataSourceMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.sf.jsqlparser.expression.Function;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.Statement;
+import net.sf.jsqlparser.statement.select.ParenthesedSelect;
 import net.sf.jsqlparser.util.TablesNamesFinder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * SQL 安全校验服务
@@ -29,6 +32,9 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
     private final CacheService cacheService;
     private final DataSourceMapper dataSourceMapper;
 
+    private static final Set<String> AGG_FUNCTIONS =
+            Set.of("COUNT", "SUM", "AVG", "MAX", "MIN");
+
     @Override
     public void validate(String sql, Long userId, Long dataSourceId) {
         log.info("[安全审计] userId: {}, dsId: {}, sql: {}", userId, dataSourceId, sql);
@@ -39,22 +45,21 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
         }
 
         try {
+            // SQL 只解析一次，后续检查均复用同一个 Statement 对象
             Statement statement = CCJSqlParserUtil.parse(sql);
 
             TablesNamesFinder finder = new TablesNamesFinder();
             Set<String> tableSet = finder.getTables(statement);
-
             List<String> tableNames = tableSet.stream()
                     .map(String::toLowerCase)
                     .toList();
 
             checkTableAccess(userId, dataSourceId, tableNames);
 
-            // 查出 dbType，用于行数限制的方言适配
             DataSource dsConfig = dataSourceMapper.selectById(dataSourceId);
             String dbType = dsConfig != null ? dsConfig.getDbType().toLowerCase() : "mysql";
 
-            checkPolicy(userId, sql, dbType);
+            checkPolicy(userId, statement, sql.toUpperCase(), dbType);
 
         } catch (Exception e) {
             log.error("[审计未通过] {}", e.getMessage());
@@ -79,30 +84,26 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
     }
 
     /**
-     * 对比 Redis 中的策略 JSON
-     * 行数限制检查按数据库方言区分：
+     * 对比 Redis 中的策略 JSON；subquery / aggregation 检查基于 AST，不受注释或字符串字面量干扰
      */
-    private void checkPolicy(Long userId, String sql, String dbType) {
+    private void checkPolicy(Long userId, Statement statement, String upperSql, String dbType) {
         String policyJson = cacheService.getUserPolicy(userId);
         if (policyJson == null || "NO_POLICY".equals(policyJson)) {
             return;
         }
 
         QueryPolicy policy = JSON.parseObject(policyJson, QueryPolicy.class);
-        String upper = sql.toUpperCase();
 
-        if (policy.getAllowJoin() == 0 && upper.contains("JOIN")) {
+        if (policy.getAllowJoin() == 0 && upperSql.contains("JOIN")) {
             throw new RuntimeException("当前策略禁止关联查询(JOIN)");
         }
-        if (policy.getAllowSubquery() == 0 && isSubquery(upper)) {
+        if (policy.getAllowSubquery() == 0 && isSubquery(statement)) {
             throw new RuntimeException("当前策略禁止执行子查询");
         }
-        if (policy.getAllowAggregation() == 0 && isAggregation(upper)) {
+        if (policy.getAllowAggregation() == 0 && isAggregation(statement)) {
             throw new RuntimeException("当前策略禁止执行聚合统计");
         }
-
-        // 行数限制检查：按方言判断是否存在限制关键字
-        if (!hasRowLimit(upper, dbType)) {
+        if (!hasRowLimit(upperSql, dbType)) {
             throw new RuntimeException("必须包含行数限制，最大允许 "
                     + policy.getMaxLimit() + " 行");
         }
@@ -119,14 +120,37 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
         };
     }
 
-    private boolean isSubquery(String sql) {
-        return sql.indexOf("SELECT", 1) > 0;
+    /**
+     * 通过 AST 遍历检测是否含有子查询（EXISTS / IN (SELECT ...) / 派生表等）。
+     * JSQLParser 4.6+ 将 SubSelect 重命名为 ParenthesedSelect。
+     * 比字符串匹配更可靠，不会被注释或字符串字面量中的 SELECT 关键字干扰。
+     */
+    private boolean isSubquery(Statement statement) {
+        AtomicBoolean found = new AtomicBoolean(false);
+        new TablesNamesFinder() {
+            @Override
+            public void visit(ParenthesedSelect parenthesedSelect) {
+                found.set(true);
+                super.visit(parenthesedSelect);
+            }
+        }.getTables(statement);
+        return found.get();
     }
 
-    private boolean isAggregation(String sql) {
-        return sql.contains("COUNT(")
-                || sql.contains("SUM(")
-                || sql.contains("AVG(")
-                || sql.contains("MAX(");
+    /**
+     * 通过 AST 遍历检测是否含有聚合函数（COUNT / SUM / AVG / MAX / MIN）。
+     */
+    private boolean isAggregation(Statement statement) {
+        AtomicBoolean found = new AtomicBoolean(false);
+        new TablesNamesFinder() {
+            @Override
+            public void visit(Function function) {
+                if (AGG_FUNCTIONS.contains(function.getName().toUpperCase())) {
+                    found.set(true);
+                }
+                super.visit(function);
+            }
+        }.getTables(statement);
+        return found.get();
     }
 }

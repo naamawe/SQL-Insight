@@ -30,3 +30,5 @@ aliyun:
 qdrant:
   host: ${QDRANT_HOST}
   port: ${QDRANT_PORT}
+ds:
+  encrypt-key: ${DS_ENCRYPT_KEY}

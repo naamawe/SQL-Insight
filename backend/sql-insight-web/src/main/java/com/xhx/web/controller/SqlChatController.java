@@ -5,6 +5,7 @@ import com.xhx.ai.service.NlFeedbackGenerator;
 import com.xhx.common.context.UserContext;
 import com.xhx.common.exception.ServiceException;
 import com.xhx.common.result.Result;
+import com.xhx.core.model.dto.SqlChatRequest;
 import com.xhx.core.model.dto.SqlChatResponse;
 import com.xhx.ai.listener.ChatStreamListener;
 import com.xhx.core.service.sql.ChatSessionService;
@@ -13,6 +14,7 @@ import com.xhx.core.service.sql.SqlExecutorService;
 import com.xhx.core.service.sql.SqlGeneratorService;
 import com.xhx.dal.entity.ChatSession;
 import com.xhx.web.adapter.SseChatAdapter;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -67,18 +69,17 @@ public class SqlChatController {
      * 流程：生成 SQL → 执行 → Self-correction → 生成摘要 → 一次性返回
      */
     @PostMapping("/chat")
-    public Result<SqlChatResponse> chat(
-            @RequestParam(required = false) Long sessionId,
-            @RequestParam(required = false) Long dataSourceId,
-            @RequestParam String question) {
+    public Result<SqlChatResponse> chat(@Valid @RequestBody SqlChatRequest req) {
 
         Long userId = UserContext.getUserId();
+        Long sessionId = req.getSessionId();
+        String question = req.getQuestion();
 
         if (sessionId == null) {
-            if (dataSourceId == null) {
+            if (req.getDataSourceId() == null) {
                 return Result.error(400, "新会话必须传入 dataSourceId");
             }
-            sessionId = chatSessionService.createSession(userId, dataSourceId, question);
+            sessionId = chatSessionService.createSession(userId, req.getDataSourceId(), question);
         }
 
         ChatSession session = chatSessionService.getSessionDetail(userId, sessionId);
@@ -112,34 +113,26 @@ public class SqlChatController {
     /**
      * SSE 流式 AI 对话
      * <p>
-     * SQL 生成和执行仍为阻塞（必须等完整 SQL 才能执行），
-     * 但用户可以通过 stage 事件实时感知进度。
-     * 只有最后的摘要部分是真正的流式 token 推送。
+     * 使用 POST + RequestBody，避免 question 内容出现在 URL 中被日志记录。
+     * 前端使用 {@code fetch()} 发起请求，通过 {@code response.body.getReader()} 读取 SSE 流，
+     * 而非原生 {@code EventSource}（EventSource 仅支持 GET）。
      * <p>
      * 注意：
-     *   1. Spring Security 已配置 {@code csrf.disable()}，GET 接口无需额外处理 CSRF。
-     *   2. 使用 {@code CompletableFuture.runAsync()} 异步处理，不阻塞 Tomcat 线程。
-     *   3. SseEmitter 超时设为 3 分钟，适配较慢的 SQL 生成场景。
-     *   4. UserContext 基于 ThreadLocal，需要在异步线程启动前捕获当前用户。
+     *   1. 使用 {@code @Async} 异步处理，不阻塞 Tomcat 线程。
+     *   2. SseEmitter 超时设为 3 分钟，适配较慢的 SQL 生成场景。
+     *   3. UserContext 基于 ThreadLocal，需要在异步线程启动前捕获当前用户 ID。
      */
-    @GetMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chatStream(
-            @RequestParam(required = false) Long sessionId,
-            @RequestParam(required = false) Long dataSourceId,
-            @RequestParam String question) {
+    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter chatStream(@Valid @RequestBody SqlChatRequest req) {
 
-        // 初始化 Emitter
         SseEmitter emitter = new SseEmitter(300_000L);
-
-        // 创建适配器
         ChatStreamListener adapter = new SseChatAdapter(emitter);
 
-        // 执行异步业务流
         sqlChatApiService.executeChatStream(
                 UserContext.getUserId(),
-                sessionId,
-                dataSourceId,
-                question,
+                req.getSessionId(),
+                req.getDataSourceId(),
+                req.getQuestion(),
                 adapter
         );
 

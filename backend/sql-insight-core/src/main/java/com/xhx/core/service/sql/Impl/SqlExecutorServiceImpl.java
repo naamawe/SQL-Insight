@@ -2,6 +2,7 @@ package com.xhx.core.service.sql.Impl;
 
 import com.xhx.common.exception.NotExistException;
 import com.xhx.common.exception.ServiceException;
+import com.xhx.core.service.management.DataSourcePasswordCipher;
 import com.xhx.core.service.sql.SqlExecutorService;
 import com.xhx.dal.config.DynamicDataSourceManager;
 import com.xhx.dal.entity.DataSource;
@@ -22,8 +23,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SqlExecutorServiceImpl implements SqlExecutorService {
 
-    private final DynamicDataSourceManager dataSourceManager;
-    private final DataSourceMapper dataSourceMapper;
+    private final DynamicDataSourceManager  dataSourceManager;
+    private final DataSourceMapper          dataSourceMapper;
+    private final DataSourcePasswordCipher  passwordCipher;
 
     @Override
     public List<Map<String, Object>> execute(Long dataSourceId, String sql) {
@@ -32,7 +34,8 @@ public class SqlExecutorServiceImpl implements SqlExecutorService {
             throw new NotExistException(404, "数据源不存在");
         }
 
-        javax.sql.DataSource ds = dataSourceManager.getDataSource(config);
+        // 从 DB 读出的 password 是密文，建连接前解密
+        javax.sql.DataSource ds = dataSourceManager.getDataSource(passwordCipher.decryptedCopy(config));
         JdbcTemplate jdbcTemplate = new JdbcTemplate(ds);
 
         try {

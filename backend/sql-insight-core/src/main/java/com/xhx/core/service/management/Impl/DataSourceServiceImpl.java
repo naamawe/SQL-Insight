@@ -12,6 +12,7 @@ import com.xhx.core.model.dto.DataSourceSaveDTO;
 import com.xhx.core.model.dto.DataSourceUpdateDTO;
 import com.xhx.core.model.vo.DataSourceVO;
 import com.xhx.core.service.cache.CacheService;
+import com.xhx.core.service.management.DataSourcePasswordCipher;
 import com.xhx.core.service.management.DataSourceService;
 import com.xhx.core.service.management.UserDataSourceService;
 import com.xhx.dal.config.DynamicDataSourceManager;
@@ -50,6 +51,7 @@ public class DataSourceServiceImpl implements DataSourceService {
     private final UserDataSourceService     userDataSourceService;
     private final CacheService              cacheService;
     private final ApplicationEventPublisher eventPublisher;
+    private final DataSourcePasswordCipher  passwordCipher;
     /**
      * 数据库类型 -> 驱动类名映射表
      */
@@ -79,7 +81,8 @@ public class DataSourceServiceImpl implements DataSourceService {
     @Transactional(rollbackFor = Exception.class)
     public void addDataSource(DataSourceSaveDTO saveDto) {
         DataSource ds = convertToEntity(saveDto);
-        testConnectionInternal(ds);
+        testConnectionInternal(ds);                         // 使用明文密码测试连接
+        ds.setPassword(passwordCipher.encrypt(ds.getPassword())); // 加密后再持久化
         dataSourceMapper.insert(ds);
 
         UserDataSource uds = new UserDataSource();
@@ -189,11 +192,24 @@ public class DataSourceServiceImpl implements DataSourceService {
         }
         DataSource newDs = new DataSource();
         BeanUtils.copyProperties(updateDto, newDs);
-        if (!StringUtils.hasText(updateDto.getPassword())) {
-            newDs.setPassword(oldDs.getPassword());
-        }
         newDs.setDriverClassName(resolveDriver(updateDto.getDbType()));
-        testConnectionInternal(newDs);
+
+        // 确定用于连接测试的明文密码，以及最终持久化的加密密码
+        final String plainPassword;
+        if (StringUtils.hasText(updateDto.getPassword())) {
+            plainPassword = updateDto.getPassword();
+            newDs.setPassword(passwordCipher.encrypt(plainPassword)); // 新密码加密存储
+        } else {
+            plainPassword = passwordCipher.decrypt(oldDs.getPassword()); // 解密旧密码用于测试
+            newDs.setPassword(oldDs.getPassword());                       // 保留已加密的旧密码
+        }
+
+        // 用明文密码做连接测试
+        DataSource testDs = new DataSource();
+        BeanUtils.copyProperties(newDs, testDs);
+        testDs.setPassword(plainPassword);
+        testConnectionInternal(testDs);
+
         dataSourceMapper.updateById(newDs);
         dynamicDataSourceManager.removeDataSource(newDs.getId());
         log.info("数据源 [{}] 配置已更新，旧连接池已释放", newDs.getConnName());
@@ -250,7 +266,8 @@ public class DataSourceServiceImpl implements DataSourceService {
 
     private List<String> fetchTableNamesFromTarget(DataSource ds) {
         List<String> tables = new ArrayList<>();
-        javax.sql.DataSource pooledDs = dynamicDataSourceManager.getDataSource(ds);
+        // ds.password 从 DB 中读出是密文，建连接前需解密
+        javax.sql.DataSource pooledDs = dynamicDataSourceManager.getDataSource(passwordCipher.decryptedCopy(ds));
         try (Connection conn = pooledDs.getConnection()) {
             DatabaseMetaData meta = conn.getMetaData();
             try (ResultSet rs = meta.getTables(
