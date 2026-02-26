@@ -1,5 +1,7 @@
 package com.xhx.web.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xhx.common.result.Result;
 import com.xhx.core.model.dto.RoleSaveDTO;
 import com.xhx.core.model.dto.RoleUpdateDTO;
@@ -8,6 +10,7 @@ import com.xhx.dal.entity.Role;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -33,6 +36,22 @@ public class RoleController {
     @GetMapping("/list")
     public Result<List<Role>> listAll() {
         return Result.success(roleService.list());
+    }
+
+    /**
+     * 分页查询角色
+     */
+    @GetMapping("/page")
+    public Result<Page<Role>> page(
+            @RequestParam(defaultValue = "1") int current,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String roleName) {
+        LambdaQueryWrapper<Role> wrapper = new LambdaQueryWrapper<>();
+        if (StringUtils.hasText(roleName)) {
+            wrapper.like(Role::getRoleName, roleName);
+        }
+        wrapper.orderByAsc(Role::getId);
+        return Result.success(roleService.page(new Page<>(current, size), wrapper));
     }
 
     /**

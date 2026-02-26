@@ -113,6 +113,32 @@ async function handleResetPassword(row: UserVO) {
   ElMessage.success('密码已重置为默认密码')
 }
 
+// ── 系统权限编辑 ──────────────────────────────────────
+const permDialogVisible = ref(false)
+const permSubmitting = ref(false)
+const permUserId = ref(0)
+const permUserName = ref('')
+const selectedPerm = ref('')
+
+function openPermEdit(row: UserVO) {
+  permUserId.value = row.id
+  permUserName.value = row.userName
+  selectedPerm.value = row.systemPermission
+  permDialogVisible.value = true
+}
+
+async function handlePermUpdate() {
+  permSubmitting.value = true
+  try {
+    await userApi.updateSystemPermission(permUserId.value, selectedPerm.value)
+    ElMessage.success('系统权限已更新')
+    permDialogVisible.value = false
+    fetchList()
+  } finally {
+    permSubmitting.value = false
+  }
+}
+
 // ── 工具函数 ──────────────────────────────────────────
 function getRoleName(roleId: number) {
   return roles.value.find(r => r.id === roleId)?.roleName ?? '-'
@@ -198,9 +224,14 @@ onMounted(async () => {
             <span class="time-text">{{ row.gmtCreated?.slice(0, 16) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="190" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
+              <button class="action-btn" title="编辑系统权限" @click="openPermEdit(row)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+              </button>
               <button class="action-btn" title="编辑" @click="openEdit(row)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -279,6 +310,23 @@ onMounted(async () => {
       <template #footer>
         <el-button @click="editDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="editSubmitting" @click="handleEdit">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 系统权限编辑弹窗 -->
+    <el-dialog v-model="permDialogVisible" :title="`编辑系统权限 — ${permUserName}`" width="360px" :close-on-click-modal="false" class="user-dialog">
+      <el-form label-width="80px" class="user-form">
+        <el-form-item label="系统权限">
+          <el-select v-model="selectedPerm" style="width: 100%">
+            <el-option label="USER" value="ROLE_USER" />
+            <el-option label="ADMIN" value="ROLE_ADMIN" />
+            <el-option label="SUPER ADMIN" value="ROLE_SUPER_ADMIN" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="permDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="permSubmitting" @click="handlePermUpdate">保存</el-button>
       </template>
     </el-dialog>
   </div>

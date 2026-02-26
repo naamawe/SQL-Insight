@@ -1,14 +1,98 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { useChatStore } from '@/stores/chat'
+import { userAuthApi, rolePermissionApi } from '@/api/permission'
+import { dataSourceApi } from '@/api/datasource'
+import { userApi } from '@/api/user'
+import type { DataSourceVO } from '@/types'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const chatStore = useChatStore()
 
 const collapsed = ref(false)
+const showLogoutDialog = ref(false)
+const showDeleteDialog = ref(false)
+const sessionToDelete = ref<any>(null)
+const showUserMenu = ref(false)
+const showProfilePanel = ref(false)
+const profileDsList = ref<DataSourceVO[]>([])
+const profileTableMap = ref<Record<number, string[]>>({})
+const profileLoading = ref(false)
+
+// ── 修改密码 ───────────────────────────────────────────
+const showPwdForm = ref(false)
+const pwdSubmitting = ref(false)
+const pwdForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const pwdError = ref('')
+
+function openPwdForm() {
+  pwdForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+  pwdError.value = ''
+  showPwdForm.value = true
+}
+
+async function handleChangePassword() {
+  const { oldPassword, newPassword, confirmPassword } = pwdForm.value
+  if (!oldPassword || !newPassword || !confirmPassword) {
+    pwdError.value = '请填写所有字段'
+    return
+  }
+  if (newPassword.length < 6) {
+    pwdError.value = '新密码至少 6 位'
+    return
+  }
+  if (newPassword !== confirmPassword) {
+    pwdError.value = '两次密码不一致'
+    return
+  }
+  pwdError.value = ''
+  pwdSubmitting.value = true
+  try {
+    await userApi.updatePassword({ oldPassword, newPassword })
+    showPwdForm.value = false
+    // show inline success
+    pwdSuccess.value = true
+    setTimeout(() => { pwdSuccess.value = false }, 3000)
+  } catch (e: any) {
+    pwdError.value = e?.response?.data?.message ?? '修改失败，请检查旧密码'
+  } finally {
+    pwdSubmitting.value = false
+  }
+}
+
+const pwdSuccess = ref(false)
+
+function toggleUserMenu() {
+  showUserMenu.value = !showUserMenu.value
+}
+
+function closeUserMenu() {
+  showUserMenu.value = false
+}
+
+async function openProfile() {
+  showUserMenu.value = false
+  showProfilePanel.value = true
+  if (profileDsList.value.length) return
+  profileLoading.value = true
+  try {
+    const [myIds, allDs, me] = await Promise.all([
+      userAuthApi.getMyAuthorizedIds(),
+      dataSourceApi.list(),
+      userApi.me(),
+    ]) as any[]
+    profileDsList.value = (allDs as DataSourceVO[]).filter((ds: DataSourceVO) => (myIds as number[]).includes(ds.id))
+    if (me?.roleId) {
+      profileTableMap.value = (await rolePermissionApi.getSummary(me.roleId) as any) ?? {}
+    }
+  } finally {
+    profileLoading.value = false
+  }
+}
 
 // ── 菜单项（根据角色过滤） ──────────────────────────────
 const allMenus = [
@@ -16,6 +100,7 @@ const allMenus = [
   { name: 'DataSource', path: '/datasource', label: '数据源管理', roles: ['ADMIN', 'SUPER_ADMIN'] },
   { name: 'Permission', path: '/permission', label: '权限管理',   roles: ['ADMIN', 'SUPER_ADMIN'] },
   { name: 'User',       path: '/user',       label: '用户管理',   roles: ['SUPER_ADMIN'] },
+  { name: 'Role',       path: '/role',       label: '角色管理',   roles: ['SUPER_ADMIN'] },
 ]
 
 const menus = computed(() =>
@@ -23,14 +108,40 @@ const menus = computed(() =>
 )
 
 const activeMenu = computed(() => route.path)
+const isChat = computed(() => route.path === '/chat')
+
+// 进入 /chat 时加载会话列表
+watch(isChat, (val) => {
+  if (val) chatStore.loadSessions()
+}, { immediate: true })
+
+function handleDeleteSession(session: any, e: Event) {
+  e.stopPropagation()
+  sessionToDelete.value = session
+  showDeleteDialog.value = true
+}
+
+async function confirmDeleteSession() {
+  showDeleteDialog.value = false
+  if (sessionToDelete.value) {
+    await chatStore.deleteSession(sessionToDelete.value.id)
+    sessionToDelete.value = null
+  }
+}
+
+function handleSelectSession(session: any) {
+  chatStore.selectSession(session.id)
+  router.push('/chat')
+}
+
+function handleNewChat() {
+  chatStore.startNew()
+  router.push('/chat')
+}
 
 // ── 退出登录 ───────────────────────────────────────────
-async function handleLogout() {
-  await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-    confirmButtonText: '退出',
-    cancelButtonText: '取消',
-    type: 'warning',
-  })
+async function confirmLogout() {
+  showLogoutDialog.value = false
   await authStore.logout()
   router.push('/login')
 }
@@ -94,13 +205,56 @@ async function handleLogout() {
           <svg v-else-if="menu.name === 'User'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
           </svg>
+          <!-- Role 图标 -->
+          <svg v-else-if="menu.name === 'Role'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+          </svg>
           <span v-show="!collapsed">{{ menu.label }}</span>
         </router-link>
+
+        <!-- 会话列表（仅 /chat 时显示，展开状态） -->
+        <template v-if="isChat && !collapsed">
+          <div class="session-section">
+            <div class="session-section-header">
+              <span>对话记录</span>
+              <button class="new-chat-icon-btn" title="新建对话" @click="handleNewChat">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+              </button>
+            </div>
+            <div class="session-list">
+              <div
+                v-for="s in chatStore.sessions"
+                :key="s.id"
+                class="session-item"
+                :class="{ active: chatStore.currentSessionId === s.id }"
+                @click="handleSelectSession(s)"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                <span class="session-title">{{ s.title }}</span>
+                <button class="session-del" @click="handleDeleteSession(s, $event)">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+              <div v-if="!chatStore.sessions.length && !chatStore.loading" class="session-empty">暂无对话记录</div>
+            </div>
+          </div>
+        </template>
       </nav>
 
       <!-- 底部用户信息 -->
       <div class="sidebar-footer">
-        <div class="user-info" :title="collapsed ? authStore.userInfo?.username : ''">
+        <div
+          class="user-info"
+          :class="{ clickable: true }"
+          :title="collapsed ? authStore.userInfo?.username : ''"
+          @click="toggleUserMenu"
+        >
           <div class="user-avatar">
             {{ authStore.userInfo?.username?.charAt(0).toUpperCase() }}
           </div>
@@ -108,12 +262,37 @@ async function handleLogout() {
             <span class="user-name">{{ authStore.userInfo?.username }}</span>
             <span class="user-role">{{ authStore.role }}</span>
           </div>
-        </div>
-        <button v-show="!collapsed" class="logout-btn" title="退出登录" @click="handleLogout">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+          <svg v-show="!collapsed" class="user-chevron" :class="{ open: showUserMenu }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="18 15 12 9 6 15"/>
           </svg>
-        </button>
+        </div>
+
+        <!-- 用户弹出菜单 -->
+        <teleport to="body">
+          <div v-if="showUserMenu" class="user-menu-mask" @click="closeUserMenu" />
+          <div v-if="showUserMenu" class="user-menu">
+            <div class="user-menu-header">
+              <div class="user-menu-avatar">{{ authStore.userInfo?.username?.charAt(0).toUpperCase() }}</div>
+              <div class="user-menu-info">
+                <span class="user-menu-name">{{ authStore.userInfo?.username }}</span>
+                <span class="user-menu-role">{{ authStore.role }}</span>
+              </div>
+            </div>
+            <div class="user-menu-divider" />
+            <button class="user-menu-item" @click="openProfile">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+              </svg>
+              个人中心
+            </button>
+            <button class="user-menu-item danger" @click="() => { closeUserMenu(); showLogoutDialog = true }">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+              退出登录
+            </button>
+          </div>
+        </teleport>
       </div>
     </aside>
 
@@ -121,6 +300,128 @@ async function handleLogout() {
     <main class="main-content">
       <router-view />
     </main>
+
+    <!-- ── 个人中心面板 ── -->
+    <teleport to="body">
+      <div v-if="showProfilePanel" class="confirm-mask" @click.self="showProfilePanel = false">
+        <div class="profile-panel" v-loading="profileLoading">
+          <div class="profile-header">
+            <div class="profile-avatar">{{ authStore.userInfo?.username?.charAt(0).toUpperCase() }}</div>
+            <div class="profile-info">
+              <span class="profile-name">{{ authStore.userInfo?.username }}</span>
+              <span class="profile-role-badge">{{ authStore.role }}</span>
+            </div>
+            <button class="profile-close" @click="showProfilePanel = false">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+          <div class="profile-body">
+            <div class="profile-section-title">账号信息</div>
+            <div class="profile-row">
+              <span class="profile-label">用户名</span>
+              <span class="profile-value">{{ authStore.userInfo?.username }}</span>
+            </div>
+            <div class="profile-row">
+              <span class="profile-label">角色</span>
+              <span class="profile-value">{{ authStore.role }}</span>
+            </div>
+
+            <div class="profile-section-title" style="margin-top: 16px">授权数据源</div>
+            <div v-if="profileDsList.length" class="profile-ds-list">
+              <div v-for="ds in profileDsList" :key="ds.id" class="profile-ds-item">
+                <span class="ds-type-badge" :style="{ background: ds.dbType === 'mysql' ? '#00758f' : ds.dbType === 'postgresql' ? '#336791' : '#cc2927' }">
+                  {{ ds.dbType.toUpperCase() }}
+                </span>
+                <div class="profile-ds-info">
+                  <span class="profile-ds-name">{{ ds.connName }}</span>
+                  <span class="profile-ds-host">{{ ds.host }}:{{ ds.port }}/{{ ds.databaseName }}</span>
+                </div>
+                <div v-if="profileTableMap[ds.id]?.length" class="profile-table-tags">
+                  <span v-for="t in profileTableMap[ds.id]" :key="t" class="profile-table-tag">{{ t }}</span>
+                </div>
+                <span v-else class="profile-no-tables">无表权限限制</span>
+              </div>
+            </div>
+            <div v-else-if="!profileLoading" class="profile-empty">暂无授权数据源</div>
+
+            <!-- 修改密码 -->
+            <div class="profile-section-title" style="margin-top: 16px">安全设置</div>
+            <div v-if="!showPwdForm" class="profile-row" style="border-bottom:none">
+              <span class="profile-label">登录密码</span>
+              <button class="pwd-change-btn" @click="openPwdForm">修改密码</button>
+            </div>
+            <div v-else class="pwd-form">
+              <div v-if="pwdSuccess" class="pwd-success">密码修改成功</div>
+              <template v-else>
+                <div class="pwd-field">
+                  <label>当前密码</label>
+                  <input v-model="pwdForm.oldPassword" type="password" placeholder="请输入当前密码" class="pwd-input" />
+                </div>
+                <div class="pwd-field">
+                  <label>新密码</label>
+                  <input v-model="pwdForm.newPassword" type="password" placeholder="至少 6 位" class="pwd-input" />
+                </div>
+                <div class="pwd-field">
+                  <label>确认新密码</label>
+                  <input v-model="pwdForm.confirmPassword" type="password" placeholder="再次输入新密码" class="pwd-input" />
+                </div>
+                <div v-if="pwdError" class="pwd-error">{{ pwdError }}</div>
+                <div class="pwd-actions">
+                  <button class="pwd-cancel" @click="showPwdForm = false">取消</button>
+                  <button class="pwd-submit" :disabled="pwdSubmitting" @click="handleChangePassword">
+                    {{ pwdSubmitting ? '提交中...' : '确认修改' }}
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
+    <!-- ── 删除会话确认 dialog ── -->
+    <teleport to="body">
+      <div v-if="showDeleteDialog" class="confirm-mask" @click.self="showDeleteDialog = false">
+        <div class="confirm-dialog">
+          <div class="confirm-icon" style="background:#fee2e2;color:#dc2626">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+            </svg>
+          </div>
+          <div class="confirm-body">
+            <p class="confirm-title">删除对话</p>
+            <p class="confirm-desc">确定要删除「{{ sessionToDelete?.title }}」吗？此操作不可撤销。</p>
+          </div>
+          <div class="confirm-actions">
+            <button class="confirm-cancel" @click="showDeleteDialog = false">取消</button>
+            <button class="confirm-ok" @click="confirmDeleteSession">删除</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
+    <!-- ── 退出确认 dialog ── -->
+    <teleport to="body">
+      <div v-if="showLogoutDialog" class="confirm-mask" @click.self="showLogoutDialog = false">
+        <div class="confirm-dialog">
+          <div class="confirm-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+          </div>
+          <div class="confirm-body">
+            <p class="confirm-title">退出登录</p>
+            <p class="confirm-desc">确定要退出当前账号吗？</p>
+          </div>
+          <div class="confirm-actions">
+            <button class="confirm-cancel" @click="showLogoutDialog = false">取消</button>
+            <button class="confirm-ok" @click="confirmLogout">退出</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
   </div>
 </template>
 
@@ -225,6 +526,105 @@ async function handleLogout() {
   flex-direction: column;
   gap: 2px;
   overflow-y: auto;
+  min-height: 0;
+}
+
+.session-section {
+  margin-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  min-height: 0;
+}
+
+.session-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-sidebar-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.new-chat-icon-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-sidebar-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.new-chat-icon-btn:hover {
+  background: var(--color-bg-sidebar-hover);
+  color: var(--color-text-sidebar);
+}
+
+.session-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--color-text-sidebar-muted);
+  font-size: 12px;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.session-item:hover {
+  background: var(--color-bg-sidebar-hover);
+  color: var(--color-text-sidebar);
+}
+
+.session-item.active {
+  background: var(--color-bg-sidebar-active);
+  color: var(--color-text-sidebar);
+}
+
+.session-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-del {
+  opacity: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--color-text-sidebar-muted);
+  transition: opacity var(--transition-fast), background var(--transition-fast);
+}
+
+.session-item:hover .session-del { opacity: 1; }
+.session-del:hover { background: rgba(220, 38, 38, 0.2); color: #fca5a5; }
+
+.session-empty {
+  padding: 16px 8px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--color-text-sidebar-muted);
 }
 
 .nav-item {
@@ -321,21 +721,392 @@ async function handleLogout() {
 }
 
 .logout-btn {
-  width: 32px;
-  height: 32px;
+  display: none;
+}
+
+/* ── 用户信息区（可点击） ── */
+.user-info.clickable {
+  cursor: pointer;
+  flex: 1;
+  transition: background var(--transition-fast);
   border-radius: var(--radius-md);
+}
+
+.user-info.clickable:hover {
+  background: var(--color-bg-sidebar-hover);
+}
+
+.user-chevron {
+  flex-shrink: 0;
   color: var(--color-text-sidebar-muted);
+  transition: transform var(--transition-fast);
+  margin-left: auto;
+}
+
+.user-chevron.open {
+  transform: rotate(180deg);
+}
+
+/* ── 用户弹出菜单 ── */
+.user-menu-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+}
+
+.user-menu {
+  position: fixed;
+  bottom: 72px;
+  left: 12px;
+  width: 220px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 9999;
+  overflow: hidden;
+  animation: menu-in 0.15s ease;
+}
+
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.user-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 14px 12px;
+}
+
+.user-menu-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+.user-menu-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.user-menu-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu-role {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.user-menu-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 0 10px;
+}
+
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  text-align: left;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.logout-btn:hover {
-  background: var(--color-bg-sidebar-hover);
+.user-menu-item:hover {
+  background: var(--color-bg-input);
+  color: var(--color-text-primary);
+}
+
+.user-menu-item.danger:hover {
+  background: #fef2f2;
   color: var(--color-error);
 }
+
+/* ── 个人中心面板 ── */
+.profile-panel {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+}
+
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.profile-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: white;
+  font-size: 18px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.profile-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.profile-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.profile-role-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-bg);
+  color: var(--color-accent);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  width: fit-content;
+}
+
+.profile-close {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.profile-close:hover {
+  background: var(--color-bg-input);
+  color: var(--color-text-primary);
+}
+
+.profile-body {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.profile-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-disabled);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 8px;
+  margin-top: 4px;
+}
+
+.profile-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+  gap: 16px;
+}
+
+.profile-row:last-child { border-bottom: none; }
+
+.profile-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.profile-value {
+  font-size: 13px;
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.profile-ds-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.profile-ds-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-ds-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-ds-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.profile-ds-host {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+}
+
+.profile-table-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.profile-table-tag {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+}
+
+.profile-no-tables {
+  font-size: 11px;
+  color: var(--color-text-disabled);
+  font-style: italic;
+}
+
+.profile-empty {
+  font-size: 13px;
+  color: var(--color-text-disabled);
+  text-align: center;
+  padding: 16px 0;
+}
+
+.pwd-change-btn {
+  font-size: 13px;
+  color: var(--color-accent);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-accent);
+  transition: background var(--transition-fast);
+}
+.pwd-change-btn:hover { background: var(--color-accent-bg); }
+
+.pwd-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--color-bg-input);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.pwd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pwd-field label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.pwd-input {
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+.pwd-input:focus { border-color: var(--color-accent); }
+
+.pwd-error {
+  font-size: 12px;
+  color: var(--color-error);
+}
+
+.pwd-success {
+  font-size: 13px;
+  color: var(--color-success);
+  text-align: center;
+  padding: 8px 0;
+}
+
+.pwd-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.pwd-cancel {
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  transition: background var(--transition-fast);
+}
+.pwd-cancel:hover { background: var(--color-border); }
+
+.pwd-submit {
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--color-accent);
+  color: white;
+  transition: opacity var(--transition-fast);
+}
+.pwd-submit:hover:not(:disabled) { opacity: 0.88; }
+.pwd-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── 主内容 ── */
 .main-content {
@@ -343,5 +1114,89 @@ async function handleLogout() {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* ── 退出确认 dialog ── */
+.confirm-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 8vh;
+  z-index: 9999;
+}
+
+.confirm-dialog {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-lg);
+}
+
+.confirm-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: #fef3c7;
+  color: var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirm-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.confirm-desc {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin: 2px 0 0;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.confirm-cancel {
+  padding: 7px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  transition: background var(--transition-fast);
+}
+
+.confirm-cancel:hover {
+  background: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.confirm-ok {
+  padding: 7px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--color-error);
+  color: white;
+  transition: opacity var(--transition-fast);
+}
+
+.confirm-ok:hover {
+  opacity: 0.88;
 }
 </style>

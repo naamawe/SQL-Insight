@@ -13,7 +13,14 @@ export interface UserUpdateDTO {
   status: number
 }
 
+export interface UserPasswordUpdateDTO {
+  oldPassword: string
+  newPassword: string
+}
+
 export const userApi = {
+  me: () => http.get<UserVO>('/users/me'),
+
   page: (current: number, size: number, username?: string) =>
     http.get<PageResult<UserVO>>('/users/page', { params: { current, size, username } }),
 
@@ -25,10 +32,24 @@ export const userApi = {
 
   resetPassword: (id: number) => http.put<void>(`/users/${id}/password/reset`),
 
+  updatePassword: (dto: UserPasswordUpdateDTO) => http.put<void>('/users/password', dto),
+
   updateSystemPermission: (id: number, systemPermission: string) =>
     http.put<void>(`/users/${id}/system-permission`, null, { params: { systemPermission } }),
 }
 
 export const roleApi = {
   list: () => http.get<Role[]>('/roles/list'),
+
+  page: (current: number, size: number, roleName?: string) =>
+    http.get<PageResult<Role>>('/roles/page', { params: { current, size, roleName } }),
+
+  save: (dto: { roleName: string; description: string }) =>
+    http.post<number>('/roles', dto),
+
+  update: (dto: { id: number; roleName: string; description: string }) =>
+    http.put<void>('/roles', dto),
+
+  remove: (id: number) => http.delete<void>(`/roles/${id}`),
 }
+

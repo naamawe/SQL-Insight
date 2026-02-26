@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { queryPolicyApi, userAuthApi } from '@/api/permission'
+import { queryPolicyApi, userAuthApi, rolePermissionApi } from '@/api/permission'
 import { roleApi } from '@/api/user'
 import { userApi } from '@/api/user'
 import { dataSourceApi } from '@/api/datasource'
@@ -9,8 +9,67 @@ import type { Role, QueryPolicy, UserVO, DataSourceVO } from '@/types'
 
 const activeTab = ref('policy')
 
-// ── 角色列表（两个 Tab 共用） ─────────────────────────
+// ── 角色分页搜索（Tab 1 & Tab 3 共用） ────────────────
 const roles = ref<Role[]>([])
+const roleSearch = ref('')
+const roleTotal = ref(0)
+const rolePage = ref(1)
+const rolePageSize = 20
+const roleLoading = ref(false)
+
+async function fetchRoles() {
+  roleLoading.value = true
+  try {
+    const res = await roleApi.page(rolePage.value, rolePageSize, roleSearch.value || undefined) as any
+    roles.value = res.records
+    roleTotal.value = res.total
+  } finally {
+    roleLoading.value = false
+  }
+}
+
+let roleSearchTimer: ReturnType<typeof setTimeout>
+function onRoleSearchInput() {
+  clearTimeout(roleSearchTimer)
+  roleSearchTimer = setTimeout(() => {
+    rolePage.value = 1
+    fetchRoles()
+  }, 300)
+}
+
+// ── 用户分页搜索（Tab 2） ──────────────────────────────
+const users = ref<UserVO[]>([])
+const userSearch = ref('')
+const userTotal = ref(0)
+const userPage = ref(1)
+const userPageSize = 20
+const userLoading = ref(false)
+
+async function fetchUsers() {
+  userLoading.value = true
+  try {
+    const res = await userApi.page(userPage.value, userPageSize, userSearch.value || undefined) as any
+    users.value = res.records
+    userTotal.value = res.total
+  } finally {
+    userLoading.value = false
+  }
+}
+
+let userSearchTimer: ReturnType<typeof setTimeout>
+function onUserSearchInput() {
+  clearTimeout(userSearchTimer)
+  userSearchTimer = setTimeout(() => {
+    userPage.value = 1
+    fetchUsers()
+  }, 300)
+}
+
+// ── 表名前端过滤（一次性加载，数量有限） ──────────────
+const tableSearch = ref('')
+const filteredTables = computed(() =>
+  tableSearch.value ? allTables.value.filter(t => t.toLowerCase().includes(tableSearch.value.toLowerCase())) : allTables.value
+)
 
 // ══════════════════════════════════════════════════════
 // Tab 1：查询策略
@@ -20,7 +79,7 @@ const policyLoading = ref(false)
 const policySaving = ref(false)
 const hasPolicy = ref(false)
 
-const policy = reactive<QueryPolicy>({
+const policy = ref<QueryPolicy>({
   roleId: 0,
   allowJoin: 0,
   allowSubquery: 0,
@@ -33,16 +92,10 @@ async function loadPolicy(roleId: number) {
   try {
     const res = await queryPolicyApi.getByRoleId(roleId)
     if (res) {
-      Object.assign(policy, res)
+      policy.value = res as any
       hasPolicy.value = true
     } else {
-      Object.assign(policy, {
-        roleId,
-        allowJoin: 0,
-        allowSubquery: 0,
-        allowAggregation: 0,
-        maxLimit: 1000,
-      })
+      policy.value = { roleId, allowJoin: 0, allowSubquery: 0, allowAggregation: 0, maxLimit: 1000 }
       hasPolicy.value = false
     }
   } finally {
@@ -57,10 +110,10 @@ function onRoleChange(roleId: number) {
 
 async function savePolicy() {
   if (!selectedRoleId.value) return
-  policy.roleId = selectedRoleId.value
+  policy.value.roleId = selectedRoleId.value
   policySaving.value = true
   try {
-    await queryPolicyApi.save(policy)
+    await queryPolicyApi.save(policy.value)
     ElMessage.success('查询策略已保存')
     hasPolicy.value = true
   } finally {
@@ -73,13 +126,12 @@ async function deletePolicy() {
   await queryPolicyApi.remove(selectedRoleId.value)
   ElMessage.success('策略已删除')
   hasPolicy.value = false
-  Object.assign(policy, { allowJoin: 0, allowSubquery: 0, allowAggregation: 0, maxLimit: 1000 })
+  policy.value = { roleId: selectedRoleId.value, allowJoin: 0, allowSubquery: 0, allowAggregation: 0, maxLimit: 1000 }
 }
 
 // ══════════════════════════════════════════════════════
 // Tab 2：用户数据源授权
 // ══════════════════════════════════════════════════════
-const users = ref<UserVO[]>([])
 const dataSources = ref<DataSourceVO[]>([])
 const selectedUserId = ref<number | null>(null)
 const authorizedIds = ref<number[]>([])
@@ -122,16 +174,77 @@ function isAuthorized(id: number) {
   return authorizedIds.value.includes(id)
 }
 
+// ══════════════════════════════════════════════════════
+// Tab 3：角色表权限
+// ══════════════════════════════════════════════════════
+const tablePermRoleId = ref<number | null>(null)
+const tablePermDsId = ref<number | null>(null)
+const allTables = ref<string[]>([])
+const authorizedTables = ref<string[]>([])
+const tableLoading = ref(false)
+const tableSaving = ref(false)
+
+async function onTablePermRoleChange(roleId: number) {
+  tablePermRoleId.value = roleId
+  tablePermDsId.value = null
+  allTables.value = []
+  authorizedTables.value = []
+  tableSearch.value = ''
+}
+
+async function onTablePermDsChange(dsId: number) {
+  tablePermDsId.value = dsId
+  if (!tablePermRoleId.value) return
+  tableLoading.value = true
+  try {
+    const [tables, authorized] = await Promise.all([
+      dataSourceApi.getTables(dsId),
+      rolePermissionApi.getTables(tablePermRoleId.value, dsId),
+    ])
+    allTables.value = tables
+    authorizedTables.value = authorized
+  } finally {
+    tableLoading.value = false
+  }
+}
+
+function toggleTable(name: string) {
+  const idx = authorizedTables.value.indexOf(name)
+  if (idx === -1) authorizedTables.value.push(name)
+  else authorizedTables.value.splice(idx, 1)
+}
+
+function isTableAuthorized(name: string) {
+  return authorizedTables.value.includes(name)
+}
+
+function selectAllTables() {
+  authorizedTables.value = [...allTables.value]
+}
+
+function clearAllTables() {
+  authorizedTables.value = []
+}
+
+async function saveTablePerm() {
+  if (!tablePermRoleId.value || !tablePermDsId.value) return
+  tableSaving.value = true
+  try {
+    await rolePermissionApi.assign(tablePermRoleId.value, tablePermDsId.value, authorizedTables.value)
+    ElMessage.success('表权限已保存')
+  } finally {
+    tableSaving.value = false
+  }
+}
+
 // ── 初始化 ────────────────────────────────────────────
 onMounted(async () => {
-  const [roleList, userPage, dsList] = await Promise.all([
-    roleApi.list(),
-    userApi.page(1, 100),
+  const [, dsList] = await Promise.all([
+    fetchRoles(),
     dataSourceApi.list(),
   ])
-  roles.value = roleList
-  users.value = userPage.records
   dataSources.value = dsList
+  fetchUsers()
 })
 </script>
 
@@ -140,7 +253,7 @@ onMounted(async () => {
     <div class="page-header">
       <div class="page-title">
         <h2>权限管理</h2>
-        <span class="page-subtitle">配置角色查询策略与用户数据源授权</span>
+        <span class="page-subtitle">配置角色查询策略、用户数据源授权与角色表权限</span>
       </div>
     </div>
 
@@ -148,15 +261,20 @@ onMounted(async () => {
     <div class="tab-bar">
       <button class="tab-item" :class="{ active: activeTab === 'policy' }" @click="activeTab = 'policy'">查询策略</button>
       <button class="tab-item" :class="{ active: activeTab === 'auth' }" @click="activeTab = 'auth'">数据源授权</button>
-      <div class="tab-line" :style="{ transform: activeTab === 'auth' ? 'translateX(100%)' : 'translateX(0)' }" />
+      <button class="tab-item" :class="{ active: activeTab === 'tables' }" @click="activeTab = 'tables'">表权限</button>
+      <div class="tab-line" :style="{ transform: activeTab === 'auth' ? 'translateX(100%)' : activeTab === 'tables' ? 'translateX(200%)' : 'translateX(0)' }" />
     </div>
 
     <!-- ── Tab 1：查询策略 ── -->
     <div v-if="activeTab === 'policy'" class="tab-content">
       <div class="panel">
         <div class="panel-side">
+          <div class="side-search">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input v-model="roleSearch" placeholder="搜索角色..." class="side-search-input" @input="onRoleSearchInput" />
+          </div>
           <p class="side-label">选择角色</p>
-          <div class="role-list">
+          <div class="role-list" v-loading="roleLoading">
             <button
               v-for="r in roles"
               :key="r.id"
@@ -166,6 +284,12 @@ onMounted(async () => {
             >
               {{ r.roleName }}
             </button>
+            <div v-if="!roles.length && !roleLoading" class="side-empty">无匹配角色</div>
+          </div>
+          <div v-if="roleTotal > rolePageSize" class="side-pagination">
+            <button class="side-page-btn" :disabled="rolePage === 1" @click="rolePage--; fetchRoles()">‹</button>
+            <span>{{ rolePage }}</span>
+            <button class="side-page-btn" :disabled="rolePage * rolePageSize >= roleTotal" @click="rolePage++; fetchRoles()">›</button>
           </div>
         </div>
 
@@ -234,12 +358,126 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- ── Tab 3：角色表权限 ── -->
+    <div v-if="activeTab === 'tables'" class="tab-content">
+      <div class="panel">
+        <div class="panel-side">
+          <div class="side-search">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input v-model="roleSearch" placeholder="搜索角色..." class="side-search-input" @input="onRoleSearchInput" />
+          </div>
+          <p class="side-label">选择角色</p>
+          <div class="role-list" v-loading="roleLoading">
+            <button
+              v-for="r in roles"
+              :key="r.id"
+              class="role-item"
+              :class="{ active: tablePermRoleId === r.id }"
+              @click="onTablePermRoleChange(r.id)"
+            >
+              {{ r.roleName }}
+            </button>
+            <div v-if="!roles.length && !roleLoading" class="side-empty">无匹配角色</div>
+          </div>
+          <div v-if="roleTotal > rolePageSize" class="side-pagination">
+            <button class="side-page-btn" :disabled="rolePage === 1" @click="rolePage--; fetchRoles()">‹</button>
+            <span>{{ rolePage }}</span>
+            <button class="side-page-btn" :disabled="rolePage * rolePageSize >= roleTotal" @click="rolePage++; fetchRoles()">›</button>
+          </div>
+        </div>
+
+        <div class="panel-main" v-loading="tableLoading">
+          <template v-if="tablePermRoleId">
+            <!-- 数据源选择 -->
+            <div class="ds-select-row">
+              <span class="ds-select-label">选择数据源：</span>
+              <div class="ds-pill-list">
+                <button
+                  v-for="ds in dataSources"
+                  :key="ds.id"
+                  class="ds-pill"
+                  :class="{ active: tablePermDsId === ds.id }"
+                  @click="onTablePermDsChange(ds.id)"
+                >
+                  <span class="ds-type-badge" :style="{ background: ds.dbType === 'mysql' ? '#00758f' : ds.dbType === 'postgresql' ? '#336791' : '#cc2927' }">
+                    {{ ds.dbType.toUpperCase() }}
+                  </span>
+                  {{ ds.connName }}
+                </button>
+              </div>
+            </div>
+
+            <template v-if="tablePermDsId">
+              <div class="policy-header">
+                <span class="policy-title">
+                  {{ roles.find(r => r.id === tablePermRoleId)?.roleName }} 在
+                  {{ dataSources.find(d => d.id === tablePermDsId)?.connName }} 的可访问表
+                </span>
+                <span class="policy-badge active">{{ authorizedTables.length }} / {{ allTables.length }} 张表</span>
+              </div>
+
+              <div v-if="allTables.length" class="table-toolbar">
+                <button class="table-toolbar-btn" @click="selectAllTables">全选</button>
+                <button class="table-toolbar-btn" @click="clearAllTables">清空</button>
+                <input v-model="tableSearch" placeholder="搜索表名..." class="table-search-input" />
+              </div>
+
+              <div v-if="allTables.length" class="table-grid">
+                <div
+                  v-for="t in filteredTables"
+                  :key="t"
+                  class="table-card"
+                  :class="{ authorized: isTableAuthorized(t) }"
+                  @click="toggleTable(t)"
+                >
+                  <div class="ds-card-check">
+                    <svg v-if="isTableAuthorized(t)" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                  </div>
+                  <span class="table-name">{{ t }}</span>
+                </div>
+              </div>
+
+              <div v-else-if="!tableLoading" class="empty-hint">
+                <p>该数据源暂无表信息，请先在「数据源管理」中刷新表缓存</p>
+              </div>
+
+              <div v-if="allTables.length" class="policy-actions">
+                <el-button type="primary" class="btn-primary" :loading="tableSaving" @click="saveTablePerm">
+                  保存权限
+                </el-button>
+              </div>
+            </template>
+
+            <div v-else class="empty-hint">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-text-disabled)">
+                <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+              </svg>
+              <p>请选择一个数据源</p>
+            </div>
+          </template>
+
+          <div v-else class="empty-hint">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-text-disabled)">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            <p>请从左侧选择一个角色</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Tab 2：数据源授权 ── -->
     <div v-if="activeTab === 'auth'" class="tab-content">
       <div class="panel">
         <div class="panel-side">
+          <div class="side-search">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input v-model="userSearch" placeholder="搜索用户..." class="side-search-input" @input="onUserSearchInput" />
+          </div>
           <p class="side-label">选择用户</p>
-          <div class="role-list">
+          <div class="role-list" v-loading="userLoading">
             <button
               v-for="u in users"
               :key="u.id"
@@ -250,6 +488,12 @@ onMounted(async () => {
               <span class="user-dot">{{ u.userName.charAt(0).toUpperCase() }}</span>
               {{ u.userName }}
             </button>
+            <div v-if="!users.length && !userLoading" class="side-empty">无匹配用户</div>
+          </div>
+          <div v-if="userTotal > userPageSize" class="side-pagination">
+            <button class="side-page-btn" :disabled="userPage === 1" @click="userPage--; fetchUsers()">‹</button>
+            <span>{{ userPage }}</span>
+            <button class="side-page-btn" :disabled="userPage * userPageSize >= userTotal" @click="userPage++; fetchUsers()">›</button>
           </div>
         </div>
 
@@ -327,7 +571,7 @@ onMounted(async () => {
   border-bottom: 1px solid var(--color-border);
   margin-bottom: 20px;
   flex-shrink: 0;
-  width: 240px;
+  width: 360px;
 }
 
 .tab-item {
@@ -346,7 +590,7 @@ onMounted(async () => {
   position: absolute;
   bottom: -1px;
   left: 0;
-  width: 50%;
+  width: 33.33%;
   height: 2px;
   background: var(--color-accent);
   border-radius: 2px;
@@ -372,6 +616,78 @@ onMounted(async () => {
   padding: 16px 8px;
   overflow-y: auto;
 }
+
+.side-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px 10px;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-input);
+  color: var(--color-text-secondary);
+}
+
+.side-search-input {
+  flex: 1;
+  font-size: 12px;
+  color: var(--color-text-primary);
+  background: transparent;
+  outline: none;
+  min-width: 0;
+}
+
+.side-search-input::placeholder { color: var(--color-text-disabled); }
+
+.side-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--color-text-disabled);
+  text-align: center;
+}
+
+.side-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0 4px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  border-top: 1px solid var(--color-border);
+  margin-top: 4px;
+}
+
+.side-page-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-input);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast);
+}
+.side-page-btn:hover:not(:disabled) { background: var(--color-border); color: var(--color-text-primary); }
+.side-page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.table-search-input {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-input);
+  font-size: 12px;
+  color: var(--color-text-primary);
+  outline: none;
+  min-width: 0;
+}
+.table-search-input::placeholder { color: var(--color-text-disabled); }
+.table-search-input:focus { border-color: var(--color-accent); }
 
 .side-label {
   font-size: 11px;
@@ -548,5 +864,104 @@ onMounted(async () => {
   gap: 12px;
   color: var(--color-text-disabled);
   font-size: 13px;
+}
+
+/* ── 表权限 Tab ── */
+.ds-select-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ds-select-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.ds-pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ds-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-border);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+
+.ds-pill:hover { border-color: var(--color-accent); color: var(--color-accent); }
+.ds-pill.active { border-color: var(--color-accent); background: var(--color-accent-bg); color: var(--color-accent); font-weight: 500; }
+
+.table-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.table-toolbar-btn {
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-input);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.table-toolbar-btn:hover { background: var(--color-border); color: var(--color-text-primary); }
+
+.table-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.table-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.table-card:hover { border-color: var(--color-accent); background: var(--color-accent-bg); }
+.table-card.authorized { border-color: var(--color-accent); background: var(--color-accent-bg); }
+
+.table-card .ds-card-check {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.table-card.authorized .ds-card-check {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
+}
+
+.table-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

@@ -3,6 +3,7 @@ package com.xhx.core.service.sql.Impl;
 import com.xhx.ai.service.SchemaIndexingService;
 import com.xhx.common.model.TableMetadata;
 import com.xhx.core.extractor.MetadataExtractorRouter;
+import com.xhx.core.service.management.DataSourcePasswordCipher;
 import com.xhx.core.service.management.DataSourceService;
 import com.xhx.core.service.sql.SchemaIndexingFacade;
 import com.xhx.dal.config.DynamicDataSourceManager;
@@ -44,6 +45,7 @@ public class SchemaIndexingFacadeImpl implements SchemaIndexingFacade {
     private final DynamicDataSourceManager dataSourceManager;
     private final MetadataExtractorRouter  metadataExtractorRouter;
     private final SchemaIndexingService    schemaIndexingService;
+    private final DataSourcePasswordCipher passwordCipher;
 
     @Async("aiExecutor")
     @Override
@@ -104,8 +106,9 @@ public class SchemaIndexingFacadeImpl implements SchemaIndexingFacade {
     }
 
     private List<TableMetadata> extractMetadata(DataSource dsConfig,
-                                                 List<String> tableNames) {
-        javax.sql.DataSource ds = dataSourceManager.getDataSource(dsConfig);
+                                                List<String> tableNames) {
+        javax.sql.DataSource ds = dataSourceManager.getDataSource(
+                passwordCipher.decryptedCopy(dsConfig));
         try (Connection conn = ds.getConnection()) {
             return metadataExtractorRouter.extract(dsConfig.getDbType(), conn, tableNames);
         } catch (SQLException e) {

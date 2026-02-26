@@ -3,6 +3,7 @@ package com.xhx.core.service.sql.Impl;
 import com.xhx.common.model.TableMetadata;
 import com.xhx.core.extractor.MetadataExtractorRouter;
 import com.xhx.core.service.cache.CacheService;
+import com.xhx.core.service.management.DataSourcePasswordCipher;
 import com.xhx.core.service.sql.SchemaCollectorService;
 import com.xhx.dal.config.DynamicDataSourceManager;
 import com.xhx.dal.entity.DataSource;
@@ -29,6 +30,7 @@ public class SchemaCollectorServiceImpl implements SchemaCollectorService {
     private final DynamicDataSourceManager dataSourceManager;
     private final MetadataExtractorRouter metadataExtractorRouter;
     private final CacheService cacheService;
+    private final DataSourcePasswordCipher passwordCipher;
 
     @Override
     public List<TableMetadata> getMetadata(DataSource dsConfig, List<String> allowedTables) {
@@ -48,7 +50,8 @@ public class SchemaCollectorServiceImpl implements SchemaCollectorService {
         log.info("Schema 元数据缓存未命中，从目标库加载，数据源: {} [{}], 表数量: {}",
                 dsConfig.getConnName(), dsConfig.getDbType(), sortedTables.size());
 
-        javax.sql.DataSource dataSource = dataSourceManager.getDataSource(dsConfig);
+        javax.sql.DataSource dataSource = dataSourceManager.getDataSource(
+                passwordCipher.decryptedCopy(dsConfig));
         try (Connection conn = dataSource.getConnection()) {
             List<TableMetadata> metadata = metadataExtractorRouter.extract(
                     dsConfig.getDbType(), conn, sortedTables);
