@@ -7,62 +7,59 @@ import { userApi } from '@/api/user'
 import { dataSourceApi } from '@/api/datasource'
 import type { Role, QueryPolicy, UserVO, DataSourceVO } from '@/types'
 
-const activeTab = ref('policy')
+const activeTab = ref('auth')
 
-// ── 角色分页搜索（Tab 1 & Tab 3 共用） ────────────────
+// ── 角色列表（Tab 1 & Tab 3 共用） ────────────────────
 const roles = ref<Role[]>([])
 const roleSearch = ref('')
-const roleTotal = ref(0)
 const rolePage = ref(1)
+const roleTotal = ref(0)
 const rolePageSize = 20
-const roleLoading = ref(false)
 
 async function fetchRoles() {
-  roleLoading.value = true
-  try {
-    const res = await roleApi.page(rolePage.value, rolePageSize, roleSearch.value || undefined) as any
-    roles.value = res.records
-    roleTotal.value = res.total
-  } finally {
-    roleLoading.value = false
+  const res = await roleApi.page(rolePage.value, rolePageSize, roleSearch.value || undefined) as any
+  roles.value = res.records
+  roleTotal.value = res.total
+  if (selectedRoleId.value && !roles.value.find(r => r.id === selectedRoleId.value)) {
+    selectedRoleId.value = null
+  }
+  if (tablePermRoleId.value && !roles.value.find(r => r.id === tablePermRoleId.value)) {
+    tablePermRoleId.value = null
+    tablePermDsId.value = null
+    allTables.value = []
+    authorizedTables.value = []
   }
 }
 
-let roleSearchTimer: ReturnType<typeof setTimeout>
-function onRoleSearchInput() {
-  clearTimeout(roleSearchTimer)
-  roleSearchTimer = setTimeout(() => {
-    rolePage.value = 1
-    fetchRoles()
-  }, 300)
+let roleTimer: ReturnType<typeof setTimeout>
+function onRoleSearch() {
+  clearTimeout(roleTimer)
+  rolePage.value = 1
+  roleTimer = setTimeout(fetchRoles, 300)
 }
 
-// ── 用户分页搜索（Tab 2） ──────────────────────────────
+// ── 用户列表（Tab 2） ──────────────────────────────────
 const users = ref<UserVO[]>([])
 const userSearch = ref('')
-const userTotal = ref(0)
 const userPage = ref(1)
+const userTotal = ref(0)
 const userPageSize = 20
-const userLoading = ref(false)
 
 async function fetchUsers() {
-  userLoading.value = true
-  try {
-    const res = await userApi.page(userPage.value, userPageSize, userSearch.value || undefined) as any
-    users.value = res.records
-    userTotal.value = res.total
-  } finally {
-    userLoading.value = false
+  const res = await userApi.page(userPage.value, userPageSize, userSearch.value || undefined) as any
+  users.value = res.records
+  userTotal.value = res.total
+  if (selectedUserId.value && !users.value.find(u => u.id === selectedUserId.value)) {
+    selectedUserId.value = null
+    authorizedIds.value = []
   }
 }
 
-let userSearchTimer: ReturnType<typeof setTimeout>
-function onUserSearchInput() {
-  clearTimeout(userSearchTimer)
-  userSearchTimer = setTimeout(() => {
-    userPage.value = 1
-    fetchUsers()
-  }, 300)
+let userTimer: ReturnType<typeof setTimeout>
+function onUserSearch() {
+  clearTimeout(userTimer)
+  userPage.value = 1
+  userTimer = setTimeout(fetchUsers, 300)
 }
 
 // ── 表名前端过滤（一次性加载，数量有限） ──────────────
@@ -259,22 +256,22 @@ onMounted(async () => {
 
     <!-- Tab 切换 -->
     <div class="tab-bar">
-      <button class="tab-item" :class="{ active: activeTab === 'policy' }" @click="activeTab = 'policy'">查询策略</button>
       <button class="tab-item" :class="{ active: activeTab === 'auth' }" @click="activeTab = 'auth'">数据源授权</button>
       <button class="tab-item" :class="{ active: activeTab === 'tables' }" @click="activeTab = 'tables'">表权限</button>
-      <div class="tab-line" :style="{ transform: activeTab === 'auth' ? 'translateX(100%)' : activeTab === 'tables' ? 'translateX(200%)' : 'translateX(0)' }" />
+      <button class="tab-item" :class="{ active: activeTab === 'policy' }" @click="activeTab = 'policy'">查询策略</button>
+      <div class="tab-line" :style="{ transform: activeTab === 'tables' ? 'translateX(100%)' : activeTab === 'policy' ? 'translateX(200%)' : 'translateX(0)' }" />
     </div>
 
     <!-- ── Tab 1：查询策略 ── -->
     <div v-if="activeTab === 'policy'" class="tab-content">
       <div class="panel">
         <div class="panel-side">
+          <p class="side-label">选择角色</p>
           <div class="side-search">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input v-model="roleSearch" placeholder="搜索角色..." class="side-search-input" @input="onRoleSearchInput" />
+            <input v-model="roleSearch" placeholder="搜索角色..." class="side-search-input" @input="onRoleSearch" />
           </div>
-          <p class="side-label">选择角色</p>
-          <div class="role-list" v-loading="roleLoading">
+          <div class="role-list">
             <button
               v-for="r in roles"
               :key="r.id"
@@ -284,11 +281,11 @@ onMounted(async () => {
             >
               {{ r.roleName }}
             </button>
-            <div v-if="!roles.length && !roleLoading" class="side-empty">无匹配角色</div>
+            <div v-if="!roles.length" class="side-empty">无匹配角色</div>
           </div>
-          <div v-if="roleTotal > rolePageSize" class="side-pagination">
+          <div class="side-pagination">
             <button class="side-page-btn" :disabled="rolePage === 1" @click="rolePage--; fetchRoles()">‹</button>
-            <span>{{ rolePage }}</span>
+            <span>{{ rolePage }} / {{ Math.ceil(roleTotal / rolePageSize) || 1 }}</span>
             <button class="side-page-btn" :disabled="rolePage * rolePageSize >= roleTotal" @click="rolePage++; fetchRoles()">›</button>
           </div>
         </div>
@@ -358,16 +355,97 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- ── Tab 2：数据源授权 ── -->
+    <div v-if="activeTab === 'auth'" class="tab-content">
+      <div class="panel">
+        <div class="panel-side">
+          <p class="side-label">选择用户</p>
+          <div class="side-search">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input v-model="userSearch" placeholder="搜索用户..." class="side-search-input" @input="onUserSearch" />
+          </div>
+          <div class="role-list">
+            <button
+              v-for="u in users"
+              :key="u.id"
+              class="role-item"
+              :class="{ active: selectedUserId === u.id }"
+              @click="onUserChange(u.id)"
+            >
+              <span class="user-dot">{{ u.userName.charAt(0).toUpperCase() }}</span>
+              {{ u.userName }}
+            </button>
+            <div v-if="!users.length" class="side-empty">无匹配用户</div>
+          </div>
+          <div class="side-pagination">
+            <button class="side-page-btn" :disabled="userPage === 1" @click="userPage--; fetchUsers()">‹</button>
+            <span>{{ userPage }} / {{ Math.ceil(userTotal / userPageSize) || 1 }}</span>
+            <button class="side-page-btn" :disabled="userPage * userPageSize >= userTotal" @click="userPage++; fetchUsers()">›</button>
+          </div>
+        </div>
+
+        <div class="panel-main" v-loading="authLoading">
+          <template v-if="selectedUserId">
+            <div class="policy-header">
+              <span class="policy-title">
+                {{ users.find(u => u.id === selectedUserId)?.userName }} 的数据源权限
+              </span>
+              <span class="policy-badge active">{{ authorizedIds.length }} 个已授权</span>
+            </div>
+
+            <div class="ds-grid">
+              <div
+                v-for="ds in dataSources"
+                :key="ds.id"
+                class="ds-card"
+                :class="{ authorized: isAuthorized(ds.id) }"
+                @click="toggleDs(ds.id)"
+              >
+                <div class="ds-card-check">
+                  <svg v-if="isAuthorized(ds.id)" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                </div>
+                <div class="ds-card-info">
+                  <span class="ds-type-badge" :style="{ background: ds.dbType === 'mysql' ? '#00758f' : ds.dbType === 'postgresql' ? '#336791' : '#cc2927' }">
+                    {{ ds.dbType.toUpperCase() }}
+                  </span>
+                  <span class="ds-name">{{ ds.connName }}</span>
+                  <span class="ds-host">{{ ds.host }}:{{ ds.port }}/{{ ds.databaseName }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="!dataSources.length" class="empty-hint">
+              <p>暂无数据源，请先在「数据源管理」中添加</p>
+            </div>
+
+            <div class="policy-actions">
+              <el-button type="primary" class="btn-primary" :loading="authSaving" @click="saveAuth">
+                保存授权
+              </el-button>
+            </div>
+          </template>
+          <div v-else class="empty-hint">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-text-disabled)">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            </svg>
+            <p>请从左侧选择一个用户</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Tab 3：角色表权限 ── -->
     <div v-if="activeTab === 'tables'" class="tab-content">
       <div class="panel">
         <div class="panel-side">
+          <p class="side-label">选择角色</p>
           <div class="side-search">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input v-model="roleSearch" placeholder="搜索角色..." class="side-search-input" @input="onRoleSearchInput" />
+            <input v-model="roleSearch" placeholder="搜索角色..." class="side-search-input" @input="onRoleSearch" />
           </div>
-          <p class="side-label">选择角色</p>
-          <div class="role-list" v-loading="roleLoading">
+          <div class="role-list">
             <button
               v-for="r in roles"
               :key="r.id"
@@ -377,18 +455,17 @@ onMounted(async () => {
             >
               {{ r.roleName }}
             </button>
-            <div v-if="!roles.length && !roleLoading" class="side-empty">无匹配角色</div>
+            <div v-if="!roles.length" class="side-empty">无匹配角色</div>
           </div>
-          <div v-if="roleTotal > rolePageSize" class="side-pagination">
+          <div class="side-pagination">
             <button class="side-page-btn" :disabled="rolePage === 1" @click="rolePage--; fetchRoles()">‹</button>
-            <span>{{ rolePage }}</span>
+            <span>{{ rolePage }} / {{ Math.ceil(roleTotal / rolePageSize) || 1 }}</span>
             <button class="side-page-btn" :disabled="rolePage * rolePageSize >= roleTotal" @click="rolePage++; fetchRoles()">›</button>
           </div>
         </div>
 
         <div class="panel-main" v-loading="tableLoading">
           <template v-if="tablePermRoleId">
-            <!-- 数据源选择 -->
             <div class="ds-select-row">
               <span class="ds-select-label">选择数据源：</span>
               <div class="ds-pill-list">
@@ -467,87 +544,6 @@ onMounted(async () => {
         </div>
       </div>
     </div>
-
-    <!-- ── Tab 2：数据源授权 ── -->
-    <div v-if="activeTab === 'auth'" class="tab-content">
-      <div class="panel">
-        <div class="panel-side">
-          <div class="side-search">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input v-model="userSearch" placeholder="搜索用户..." class="side-search-input" @input="onUserSearchInput" />
-          </div>
-          <p class="side-label">选择用户</p>
-          <div class="role-list" v-loading="userLoading">
-            <button
-              v-for="u in users"
-              :key="u.id"
-              class="role-item"
-              :class="{ active: selectedUserId === u.id }"
-              @click="onUserChange(u.id)"
-            >
-              <span class="user-dot">{{ u.userName.charAt(0).toUpperCase() }}</span>
-              {{ u.userName }}
-            </button>
-            <div v-if="!users.length && !userLoading" class="side-empty">无匹配用户</div>
-          </div>
-          <div v-if="userTotal > userPageSize" class="side-pagination">
-            <button class="side-page-btn" :disabled="userPage === 1" @click="userPage--; fetchUsers()">‹</button>
-            <span>{{ userPage }}</span>
-            <button class="side-page-btn" :disabled="userPage * userPageSize >= userTotal" @click="userPage++; fetchUsers()">›</button>
-          </div>
-        </div>
-
-        <div class="panel-main" v-loading="authLoading">
-          <template v-if="selectedUserId">
-            <div class="policy-header">
-              <span class="policy-title">
-                {{ users.find(u => u.id === selectedUserId)?.userName }} 的数据源权限
-              </span>
-              <span class="policy-badge active">{{ authorizedIds.length }} 个已授权</span>
-            </div>
-
-            <div class="ds-grid">
-              <div
-                v-for="ds in dataSources"
-                :key="ds.id"
-                class="ds-card"
-                :class="{ authorized: isAuthorized(ds.id) }"
-                @click="toggleDs(ds.id)"
-              >
-                <div class="ds-card-check">
-                  <svg v-if="isAuthorized(ds.id)" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="20 6 9 17 4 12"/>
-                  </svg>
-                </div>
-                <div class="ds-card-info">
-                  <span class="ds-type-badge" :style="{ background: ds.dbType === 'mysql' ? '#00758f' : ds.dbType === 'postgresql' ? '#336791' : '#cc2927' }">
-                    {{ ds.dbType.toUpperCase() }}
-                  </span>
-                  <span class="ds-name">{{ ds.connName }}</span>
-                  <span class="ds-host">{{ ds.host }}:{{ ds.port }}/{{ ds.databaseName }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div v-if="!dataSources.length" class="empty-hint">
-              <p>暂无数据源，请先在「数据源管理」中添加</p>
-            </div>
-
-            <div class="policy-actions">
-              <el-button type="primary" class="btn-primary" :loading="authSaving" @click="saveAuth">
-                保存授权
-              </el-button>
-            </div>
-          </template>
-          <div v-else class="empty-hint">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-text-disabled)">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-            </svg>
-            <p>请从左侧选择一个用户</p>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -614,6 +610,13 @@ onMounted(async () => {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 16px 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.side-list {
+  flex: 1;
   overflow-y: auto;
 }
 
@@ -621,12 +624,18 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 8px 10px;
-  padding: 5px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  margin: 0 8px 8px;
+  padding: 6px 10px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 20px;
   background: var(--color-bg-input);
-  color: var(--color-text-secondary);
+  color: var(--color-text-disabled);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.side-search:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent);
 }
 
 .side-search-input {
@@ -635,6 +644,7 @@ onMounted(async () => {
   color: var(--color-text-primary);
   background: transparent;
   outline: none;
+  border: none;
   min-width: 0;
 }
 
@@ -699,7 +709,7 @@ onMounted(async () => {
   margin-bottom: 8px;
 }
 
-.role-list { display: flex; flex-direction: column; gap: 2px; }
+.role-list { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; }
 
 .role-item {
   display: flex;

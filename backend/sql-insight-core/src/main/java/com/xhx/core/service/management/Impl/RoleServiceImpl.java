@@ -1,11 +1,13 @@
 package com.xhx.core.service.management.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.xhx.common.exception.ServiceException;
 import com.xhx.core.event.RolePermissionChangedEvent;
 import com.xhx.core.model.dto.RoleSaveDTO;
 import com.xhx.core.model.dto.RoleUpdateDTO;
+import com.xhx.core.model.vo.RoleVO;
 import com.xhx.core.service.management.RoleService;
 import com.xhx.dal.entity.QueryPolicy;
 import com.xhx.dal.entity.Role;
@@ -23,6 +25,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.StringUtils;
+
+import java.util.List;
 
 /**
  * @author master
@@ -36,6 +41,35 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, Role> implements Ro
     private final TablePermissionMapper tablePermissionMapper;
     private final QueryPolicyMapper queryPolicyMapper;
     private final ApplicationEventPublisher eventPublisher;
+
+    @Override
+    public Page<RoleVO> getRolePage(int current, int size, String roleName) {
+        LambdaQueryWrapper<Role> wrapper = new LambdaQueryWrapper<Role>()
+                .orderByAsc(Role::getId);
+        if (StringUtils.hasText(roleName)) {
+            wrapper.like(Role::getRoleName, roleName);
+        }
+        Page<Role> entityPage = this.page(new Page<>(current, size), wrapper);
+        Page<RoleVO> voPage = new Page<>(current, size, entityPage.getTotal());
+        voPage.setRecords(entityPage.getRecords().stream().map(this::convertToVO).toList());
+        return voPage;
+    }
+
+    @Override
+    public List<RoleVO> listAllRoles() {
+        return this.list(new LambdaQueryWrapper<Role>().orderByAsc(Role::getId))
+                .stream().map(this::convertToVO).toList();
+    }
+
+    @Override
+    public RoleVO getRoleById(Long id) {
+        Role role = this.getById(id);
+        if (role == null) {
+            throw new ServiceException("角色不存在");
+        }
+        return convertToVO(role);
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createRole(RoleSaveDTO saveDTO) {
@@ -104,7 +138,6 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, Role> implements Ro
 
         this.removeById(id);
 
-        // 在 removeById(id) 之后
         TransactionSynchronizationManager.registerSynchronization(
                 new TransactionSynchronization() {
                     @Override
@@ -114,5 +147,13 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, Role> implements Ro
                 }
         );
         log.info("==> 角色 [{}] 删除成功", role.getRoleName());
+    }
+
+    // ==================== 私有工具 ====================
+
+    private RoleVO convertToVO(Role role) {
+        RoleVO vo = new RoleVO();
+        BeanUtils.copyProperties(role, vo);
+        return vo;
     }
 }

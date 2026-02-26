@@ -43,6 +43,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/role/RoleView.vue'),
         meta: { title: '角色管理', icon: 'role', roles: ['SUPER_ADMIN'] },
       },
+      {
+        path: 'profile',
+        name: 'Profile',
+        component: () => import('@/views/profile/ProfileView.vue'),
+        meta: { title: '个人中心', roles: ['USER', 'ADMIN', 'SUPER_ADMIN'] },
+      },
     ],
   },
   {

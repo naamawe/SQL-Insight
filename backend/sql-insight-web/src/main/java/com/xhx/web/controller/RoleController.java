@@ -1,16 +1,14 @@
 package com.xhx.web.controller;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xhx.common.result.Result;
 import com.xhx.core.model.dto.RoleSaveDTO;
 import com.xhx.core.model.dto.RoleUpdateDTO;
+import com.xhx.core.model.vo.RoleVO;
 import com.xhx.core.service.management.RoleService;
-import com.xhx.dal.entity.Role;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -31,39 +29,30 @@ public class RoleController {
     private final RoleService roleService;
 
     /**
-     * 获取所有角色列表
-     */
-    @GetMapping("/list")
-    public Result<List<Role>> listAll() {
-        return Result.success(roleService.list());
-    }
-
-    /**
-     * 分页查询角色
+     * 分页查询角色列表
      */
     @GetMapping("/page")
-    public Result<Page<Role>> page(
+    public Result<Page<RoleVO>> getRolePage(
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String roleName) {
-        LambdaQueryWrapper<Role> wrapper = new LambdaQueryWrapper<>();
-        if (StringUtils.hasText(roleName)) {
-            wrapper.like(Role::getRoleName, roleName);
-        }
-        wrapper.orderByAsc(Role::getId);
-        return Result.success(roleService.page(new Page<>(current, size), wrapper));
+        return Result.success(roleService.getRolePage(current, size, roleName));
     }
 
     /**
-     * 根据ID获取角色详情
+     * 获取所有角色列表（不分页，用于下拉框）
+     */
+    @GetMapping("/list")
+    public Result<List<RoleVO>> listAll() {
+        return Result.success(roleService.listAllRoles());
+    }
+
+    /**
+     * 根据 ID 获取角色详情
      */
     @GetMapping("/{id}")
-    public Result<Role> getById(@PathVariable Long id) {
-        Role role = roleService.getById(id);
-        if (role == null) {
-            return Result.error("角色不存在");
-        }
-        return Result.success(role);
+    public Result<RoleVO> getById(@PathVariable Long id) {
+        return Result.success(roleService.getRoleById(id));
     }
 
     /**
