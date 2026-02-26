@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { dataSourceApi } from '@/api/datasource'
 import type { DataSourceVO, DataSourceSaveDTO } from '@/types'
 import type { DataSourceUpdateDTO } from '@/api/datasource'
@@ -39,11 +39,33 @@ function handleSelectionChange(rows: DataSourceVO[]) {
   selectedIds.value = rows.map(r => r.id)
 }
 
+// ── 自定义确认弹窗 ─────────────────────────────────────
+const confirmVisible = ref(false)
+const confirmTitle = ref('')
+const confirmMsg = ref('')
+let confirmResolve: ((v: boolean) => void) | null = null
+
+function showConfirm(title: string, msg: string): Promise<boolean> {
+  confirmTitle.value = title
+  confirmMsg.value = msg
+  confirmVisible.value = true
+  return new Promise(resolve => { confirmResolve = resolve })
+}
+
+function onConfirmOk() {
+  confirmVisible.value = false
+  confirmResolve?.(true)
+}
+
+function onConfirmCancel() {
+  confirmVisible.value = false
+  confirmResolve?.(false)
+}
+
 async function handleBatchDelete() {
   if (!selectedIds.value.length) return
-  await ElMessageBox.confirm(`确定删除选中的 ${selectedIds.value.length} 个数据源吗？`, '批量删除', {
-    type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消',
-  })
+  const ok = await showConfirm('批量删除', `确定删除选中的 ${selectedIds.value.length} 个数据源吗？`)
+  if (!ok) return
   await dataSourceApi.batchRemove(selectedIds.value)
   ElMessage.success('批量删除成功')
   fetchList()
@@ -129,9 +151,8 @@ async function handleTest() {
 
 // ── 删除 ──────────────────────────────────────────────
 async function handleDelete(row: DataSourceVO) {
-  await ElMessageBox.confirm(`确定删除数据源「${row.connName}」吗？`, '删除确认', {
-    type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消',
-  })
+  const ok = await showConfirm('删除确认', `确定删除数据源「${row.connName}」吗？`)
+  if (!ok) return
   await dataSourceApi.remove(row.id)
   ElMessage.success('删除成功')
   fetchList()
@@ -279,6 +300,20 @@ onMounted(fetchList)
         />
       </div>
     </div>
+
+    <!-- 自定义确认弹窗 -->
+    <Teleport to="body">
+      <div v-if="confirmVisible" class="confirm-overlay" @click.self="onConfirmCancel">
+        <div class="confirm-dialog">
+          <div class="confirm-title">{{ confirmTitle }}</div>
+          <div class="confirm-msg">{{ confirmMsg }}</div>
+          <div class="confirm-actions">
+            <button class="confirm-btn-cancel" @click="onConfirmCancel">取消</button>
+            <button class="confirm-btn-ok" @click="onConfirmOk">删除</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- 新增/编辑弹窗 -->
     <el-dialog
@@ -637,4 +672,75 @@ onMounted(fetchList)
   color: #dc2626;
   border: 1px solid #fecaca;
 }
+
+/* ── 自定义确认弹窗 ── */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.confirm-dialog {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  padding: 24px 28px;
+  width: 320px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  animation: dialog-in 0.15s ease;
+}
+
+@keyframes dialog-in {
+  from { opacity: 0; transform: scale(0.95) translateY(6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.confirm-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 8px;
+}
+
+.confirm-msg {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-btn-cancel {
+  padding: 6px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.confirm-btn-cancel:hover { background: var(--color-bg-input); }
+
+.confirm-btn-ok {
+  padding: 6px 18px;
+  border-radius: 999px;
+  border: none;
+  background: var(--color-error, #dc2626);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.confirm-btn-ok:hover { opacity: 0.85; }
 </style>

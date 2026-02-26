@@ -30,7 +30,6 @@ function openProfile() {
 
 // ── 菜单项（根据角色过滤） ──────────────────────────────
 const allMenus = [
-  { name: 'Chat',       path: '/chat',       label: 'AI 对话',   roles: ['USER', 'ADMIN', 'SUPER_ADMIN'] },
   { name: 'DataSource', path: '/datasource', label: '数据源管理', roles: ['ADMIN', 'SUPER_ADMIN'] },
   { name: 'Permission', path: '/permission', label: '权限管理',   roles: ['ADMIN', 'SUPER_ADMIN'] },
   { name: 'User',       path: '/user',       label: '用户管理',   roles: ['SUPER_ADMIN'] },
@@ -44,10 +43,13 @@ const menus = computed(() =>
 const activeMenu = computed(() => route.path)
 const isChat = computed(() => route.path === '/chat')
 
-// 进入 /chat 时加载会话列表
+// 始终加载会话列表
 watch(isChat, (val) => {
   if (val) chatStore.loadSessions()
 }, { immediate: true })
+
+// 非 chat 页面也加载一次会话列表（用于侧边栏显示）
+chatStore.loadSessions()
 
 function handleDeleteSession(session: any, e: Event) {
   e.stopPropagation()
@@ -113,6 +115,16 @@ async function confirmLogout() {
         </template>
       </div>
 
+      <!-- 新建对话按钮 -->
+      <div class="new-chat-wrap">
+        <button class="new-chat-btn" @click="handleNewChat" :title="collapsed ? '新建对话' : ''">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          <span v-show="!collapsed">新建对话</span>
+        </button>
+      </div>
+
       <!-- 导航菜单 -->
       <nav class="sidebar-nav">
         <router-link
@@ -146,16 +158,11 @@ async function confirmLogout() {
           <span v-show="!collapsed">{{ menu.label }}</span>
         </router-link>
 
-        <!-- 会话列表（仅 /chat 时显示，展开状态） -->
-        <template v-if="isChat && !collapsed">
+        <!-- 会话列表（展开状态始终显示） -->
+        <template v-if="!collapsed">
           <div class="session-section">
             <div class="session-section-header">
               <span>对话记录</span>
-              <button class="new-chat-icon-btn" title="新建对话" @click="handleNewChat">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-              </button>
             </div>
             <div class="session-list">
               <div
@@ -405,20 +412,33 @@ async function confirmLogout() {
   letter-spacing: 0.6px;
 }
 
-.new-chat-icon-btn {
-  width: 20px;
-  height: 20px;
-  border-radius: var(--radius-sm);
-  color: var(--color-text-sidebar-muted);
+.new-chat-wrap {
+  padding: 8px 10px;
+}
+
+.new-chat-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.new-chat-icon-btn:hover {
-  background: var(--color-bg-sidebar-hover);
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-sidebar, rgba(255,255,255,0.12));
+  background: transparent;
   color: var(--color-text-sidebar);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.new-chat-btn:hover {
+  background: var(--color-bg-sidebar-hover);
+}
+.sidebar.collapsed .new-chat-btn {
+  padding: 7px;
+  width: 36px;
+  margin: 0 auto;
 }
 
 .session-list {
@@ -462,17 +482,17 @@ async function confirmLogout() {
   opacity: 0;
   width: 18px;
   height: 18px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   color: var(--color-text-sidebar-muted);
-  transition: opacity var(--transition-fast), background var(--transition-fast);
+  transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
 }
 
 .session-item:hover .session-del { opacity: 1; }
-.session-del:hover { background: rgba(220, 38, 38, 0.2); color: #fca5a5; }
+.session-del:hover { background: rgba(220, 38, 38, 0.18); color: #fca5a5; }
 
 .session-empty {
   padding: 16px 8px;
@@ -711,65 +731,72 @@ async function confirmLogout() {
 .confirm-mask {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.4);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding-top: 8vh;
   z-index: 9999;
+  backdrop-filter: blur(2px);
 }
 
 .confirm-dialog {
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  width: 320px;
+  border-radius: 20px;
+  padding: 28px 28px 24px;
+  width: 360px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  box-shadow: var(--shadow-lg);
+  gap: 0;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.1);
+  animation: dialog-in 0.18s ease;
+}
+
+@keyframes dialog-in {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .confirm-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  background: #fef3c7;
-  color: var(--color-accent);
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 16px;
 }
 
 .confirm-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--color-text-primary);
-  margin: 0;
+  margin: 0 0 6px;
 }
 
 .confirm-desc {
   font-size: 13px;
   color: var(--color-text-secondary);
-  margin: 2px 0 0;
+  margin: 0 0 20px;
+  line-height: 1.5;
 }
 
 .confirm-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  margin-top: 4px;
 }
 
 .confirm-cancel {
-  padding: 7px 16px;
-  border-radius: var(--radius-sm);
+  padding: 8px 18px;
+  border-radius: var(--radius-full);
   font-size: 13px;
+  font-weight: 500;
   color: var(--color-text-secondary);
   background: var(--color-bg-input);
   border: 1px solid var(--color-border);
-  transition: background var(--transition-fast);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .confirm-cancel:hover {
@@ -778,12 +805,14 @@ async function confirmLogout() {
 }
 
 .confirm-ok {
-  padding: 7px 16px;
-  border-radius: var(--radius-sm);
+  padding: 8px 18px;
+  border-radius: var(--radius-full);
   font-size: 13px;
   font-weight: 500;
-  background: var(--color-error);
+  background: #dc2626;
   color: white;
+  border: none;
+  cursor: pointer;
   transition: opacity var(--transition-fast);
 }
 
