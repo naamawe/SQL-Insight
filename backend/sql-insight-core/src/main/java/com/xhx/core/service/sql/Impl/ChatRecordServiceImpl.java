@@ -1,9 +1,11 @@
 package com.xhx.core.service.sql.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.xhx.common.exception.NotExistException;
 import com.xhx.core.model.vo.ChatRecordVO;
 import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.sql.ChatRecordService;
+import com.xhx.core.service.sql.ChatSessionService;
 import com.xhx.dal.entity.ChatRecord;
 import com.xhx.dal.mapper.ChatRecordMapper;
 import lombok.RequiredArgsConstructor;
@@ -21,8 +23,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ChatRecordServiceImpl implements ChatRecordService {
 
-    private final ChatRecordMapper chatRecordMapper;
-    private final CacheService     cacheService;
+    private final ChatRecordMapper   chatRecordMapper;
+    private final CacheService       cacheService;
+    private final ChatSessionService chatSessionService;
 
     @Override
     public Long save(Long sessionId, String question, String sql,
@@ -46,7 +49,6 @@ public class ChatRecordServiceImpl implements ChatRecordService {
         try {
             cacheService.putQueryResult(recordId, data);
         } catch (Exception e) {
-            // 缓存失败不影响主流程，用户点重新执行即可
             log.warn("查询结果缓存失败，recordId: {}，原因: {}", recordId, e.getMessage());
         }
     }
@@ -58,7 +60,6 @@ public class ChatRecordServiceImpl implements ChatRecordService {
                         .eq(ChatRecord::getSessionId, sessionId)
                         .orderByAsc(ChatRecord::getCreateTime)
         );
-
         return records.stream().map(this::toVO).toList();
     }
 
@@ -66,9 +67,9 @@ public class ChatRecordServiceImpl implements ChatRecordService {
     public ChatRecordVO getById(Long recordId, Long userId) {
         ChatRecord record = chatRecordMapper.selectById(recordId);
         if (record == null) {
-            throw new com.xhx.common.exception.NotExistException("对话记录不存在");
+            throw new NotExistException("对话记录不存在");
         }
-
+        chatSessionService.getSessionDetail(userId, record.getSessionId());
         return toVO(record);
     }
 
@@ -87,7 +88,7 @@ public class ChatRecordServiceImpl implements ChatRecordService {
                 .sqlText(record.getSqlText())
                 .summary(record.getSummary())
                 .rowTotal(record.getRowTotal())
-                .corrected(record.getCorrected() == 1)
+                .corrected(Short.valueOf((short) 1).equals(record.getCorrected()))
                 .createTime(record.getCreateTime())
                 .resultData(resultData)
                 .resultExpired(!hasCache)

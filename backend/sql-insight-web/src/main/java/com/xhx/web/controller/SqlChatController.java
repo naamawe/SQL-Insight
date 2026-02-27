@@ -26,27 +26,6 @@ import java.util.Map;
 import static com.xhx.common.constant.SystemPermissionConstants.USER;
 
 /**
- * AI 对话控制器
- *
- * <p>提供两个入口：
- * <ul>
- *   <li>{@code POST /api/ai/chat}：阻塞模式，一次性返回完整 JSON（兼容旧版前端）</li>
- *   <li>{@code GET  /api/ai/chat/stream}：SSE 流式模式，分阶段推送事件</li>
- * </ul>
- *
- * <p>SSE 事件流设计：
- * <pre>
- *   event: stage    data: {"message":"正在生成 SQL..."}      ← 阶段进度提示
- *   event: sql      data: {"sql":"SELECT ..."}               ← 完整 SQL（可能推两次，第二次含 corrected:true）
- *   event: stage    data: {"message":"SQL 执行中..."}
- *   event: data     data: {"rows":[...],"total":10,"sessionId":1}   ← 完整结果集
- *   event: summary  data: {"token":"共"}                     ← 摘要逐 token 多次推送
- *   event: summary  data: {"token":"查询到"}
- *   ...
- *   event: done     data: {}                                 ← 正常结束
- *   event: error    data: {"message":"..."}                  ← 出错时替代 done
- * </pre>
- *
  * @author master
  */
 @Slf4j
@@ -57,20 +36,18 @@ import static com.xhx.common.constant.SystemPermissionConstants.USER;
 public class SqlChatController {
 
     private final SqlGeneratorService sqlGeneratorService;
-    private final SqlExecutorService sqlExecutorService;
-    private final ChatSessionService chatSessionService;
+    private final SqlExecutorService  sqlExecutorService;
+    private final ChatSessionService  chatSessionService;
     private final NlFeedbackGenerator nlFeedbackGenerator;
-    private final SqlChatApiService sqlChatApiService;
-    private final ChatRecordService chatRecordService;
+    private final SqlChatApiService   sqlChatApiService;
+    private final ChatRecordService   chatRecordService;
 
     /**
      * 阻塞模式 AI 对话
-     * 流程：生成 SQL → 执行 → Self-correction → 生成摘要 → 一次性返回
      */
     @PostMapping("/chat")
     public Result<SqlChatResponse> chat(@Valid @RequestBody SqlChatRequest req) {
-
-        Long userId = UserContext.getUserId();
+        Long userId    = UserContext.getUserId();
         Long sessionId = req.getSessionId();
         String question = req.getQuestion();
 
@@ -83,7 +60,6 @@ public class SqlChatController {
 
         ChatSession session = chatSessionService.getSessionDetail(userId, sessionId);
         Long dsId = session.getDataSourceId();
-
         String sql = sqlGeneratorService.generate(userId, sessionId, question);
 
         try {
@@ -92,8 +68,7 @@ public class SqlChatController {
             return Result.success(buildResponse(sessionId, sql, data, summary));
 
         } catch (Exception firstError) {
-            log.warn("SQL 首次执行失败，触发 Self-correction，sessionId: {}, error: {}",
-                    sessionId, firstError.getMessage());
+            log.warn("SQL 首次执行失败，触发 Self-correction，sessionId: {}", sessionId);
             try {
                 String correctedSql = sqlGeneratorService.correct(
                         userId, sessionId, firstError.getMessage(), sql);
@@ -101,8 +76,7 @@ public class SqlChatController {
                 String summary = nlFeedbackGenerator.generate(question, correctedSql, data);
                 return Result.success(buildResponse(sessionId, correctedSql, data, summary));
             } catch (Exception secondError) {
-                log.error("Self-correction 后仍失败，sessionId: {}, error: {}",
-                        sessionId, secondError.getMessage());
+                log.error("Self-correction 后仍失败，sessionId: {}", sessionId);
                 throw new ServiceException(500,
                         "SQL 执行失败，请尝试换一种问法：" + secondError.getMessage());
             }
@@ -111,19 +85,9 @@ public class SqlChatController {
 
     /**
      * SSE 流式 AI 对话
-     * <p>
-     * 使用 POST + RequestBody，避免 question 内容出现在 URL 中被日志记录。
-     * 前端使用 {@code fetch()} 发起请求，通过 {@code response.body.getReader()} 读取 SSE 流，
-     * 而非原生 {@code EventSource}（EventSource 仅支持 GET）。
-     * <p>
-     * 注意：
-     *   1. 使用 {@code @Async} 异步处理，不阻塞 Tomcat 线程。
-     *   2. SseEmitter 超时设为 3 分钟，适配较慢的 SQL 生成场景。
-     *   3. UserContext 基于 ThreadLocal，需要在异步线程启动前捕获当前用户 ID。
      */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatStream(@Valid @RequestBody SqlChatRequest req) {
-
         SseEmitter emitter = new SseEmitter(300_000L);
         ChatStreamListener adapter = new SseChatAdapter(emitter);
 
@@ -134,9 +98,10 @@ public class SqlChatController {
                 req.getQuestion(),
                 adapter
         );
-
         return emitter;
     }
+
+    // ==================== 会话管理 ====================
 
     @GetMapping("/sessions")
     public Result<Page<ChatSession>> getSessions(
@@ -172,6 +137,39 @@ public class SqlChatController {
         return Result.success("批量删除成功", null);
     }
 
+    // ==================== 历史记录 ====================
+
+    /**
+     * 获取某个会话下的完整对话记录
+     */
+    @GetMapping("/sessions/{sessionId}/records")
+    public Result<List<ChatRecordVO>> getSessionRecords(@PathVariable Long sessionId) {
+        // getSessionDetail 内部已做归属权校验
+        chatSessionService.getSessionDetail(UserContext.getUserId(), sessionId);
+        return Result.success(chatRecordService.getBySessionId(sessionId));
+    }
+
+    /**
+     * 重新执行历史 SQL（缓存过期后使用）
+     */
+    @PostMapping("/records/{recordId}/rerun")
+    public Result<List<Map<String, Object>>> rerunRecord(@PathVariable Long recordId) {
+        Long userId = UserContext.getUserId();
+
+        // getById 内部已做归属权校验
+        ChatRecordVO record = chatRecordService.getById(recordId, userId);
+
+        List<Map<String, Object>> data = sqlExecutorService.execute(
+                chatSessionService.getSessionDetail(userId, record.getSessionId()).getDataSourceId(),
+                record.getSqlText()
+        );
+
+        chatRecordService.cacheResult(recordId, data);
+        return Result.success(data);
+    }
+
+    // ==================== 私有方法 ====================
+
     private SqlChatResponse buildResponse(Long sessionId, String sql,
                                           List<Map<String, Object>> data, String summary) {
         return SqlChatResponse.builder()
@@ -181,38 +179,5 @@ public class SqlChatController {
                 .total(data.size())
                 .summary(summary)
                 .build();
-    }
-
-    /**
-     * 获取某个会话下的完整对话记录（历史记录核心接口）
-     * 返回数据包含：问题、SQL、摘要、查询结果（Redis有效期内）、是否过期
-     */
-    @GetMapping("/sessions/{sessionId}/records")
-    public Result<List<ChatRecordVO>> getSessionRecords(@PathVariable Long sessionId) {
-        // 先校验会话归属权，防越权访问
-        chatSessionService.getSessionDetail(UserContext.getUserId(), sessionId);
-        return Result.success(chatRecordService.getBySessionId(sessionId));
-    }
-
-    /**
-     * 重新执行历史记录中的 SQL（结果缓存过期后使用）
-     * 直接用原 SQL 查询，不经过 AI，结果重新写入 Redis
-     */
-    @PostMapping("/records/{recordId}/rerun")
-    public Result<List<Map<String, Object>>> rerunRecord(@PathVariable Long recordId) {
-        Long userId = UserContext.getUserId();
-
-        // 查出历史记录（这里需要 ChatRecordService 提供 getById 方法，见下方补充）
-        ChatRecordVO record = chatRecordService.getById(recordId, userId);
-
-        List<Map<String, Object>> data = sqlExecutorService.execute(
-                chatSessionService.getSessionDetail(userId, record.getSessionId()).getDataSourceId(),
-                record.getSqlText()
-        );
-
-        // 重新写入缓存
-        chatRecordService.cacheResult(recordId, data);
-
-        return Result.success(data);
     }
 }
