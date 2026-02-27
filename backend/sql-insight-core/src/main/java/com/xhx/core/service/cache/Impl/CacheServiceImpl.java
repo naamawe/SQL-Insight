@@ -265,6 +265,40 @@ public class CacheServiceImpl implements CacheService {
                 redisTemplate.expire(key, SecurityConstants.TOKEN_TTL_HOURS, TimeUnit.HOURS));
     }
 
+    // ==================== 查询结果缓存 ====================
+
+    @Override
+    public void putQueryResult(Long recordId, List<Map<String, Object>> data) {
+        // 只缓存前 100 行，防止大结果集撑爆 Redis
+        List<Map<String, Object>> sample = data.stream()
+                .limit(SecurityConstants.QUERY_RESULT_MAX_ROWS)
+                .toList();
+
+        redisTemplate.opsForValue().set(
+                SecurityConstants.QUERY_RESULT_KEY + recordId,
+                JSON.toJSONString(sample),
+                SecurityConstants.QUERY_RESULT_TTL_HOURS, TimeUnit.HOURS
+        );
+        log.debug("查询结果已缓存，recordId: {}，缓存行数: {}", recordId, sample.size());
+    }
+
+    @Override
+    public List<Map<String, Object>> getQueryResult(Long recordId) {
+        String json = redisTemplate.opsForValue()
+                .get(SecurityConstants.QUERY_RESULT_KEY + recordId);
+        if (json == null) {
+            return null;
+        }
+        return JSON.parseObject(json, new TypeReference<>() {
+        });
+    }
+
+    @Override
+    public boolean hasQueryResult(Long recordId) {
+        return Boolean.TRUE.equals(
+                redisTemplate.hasKey(SecurityConstants.QUERY_RESULT_KEY + recordId));
+    }
+
     // ==================== 私有工具 ====================
 
     private long randomTtl() {

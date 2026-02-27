@@ -3,6 +3,7 @@ package com.xhx.core.service.cache;
 import com.xhx.common.model.TableMetadata;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -86,4 +87,23 @@ public interface CacheService {
 
     // ===== 续期 =====
     void renewUserSession(Long userId);
+
+    // ===== 查询结果缓存（Redis，TTL 24h） =====
+
+    /**
+     * 缓存查询结果（最多 QUERY_RESULT_MAX_ROWS 行）
+     */
+    void putQueryResult(Long recordId, List<Map<String, Object>> data);
+
+    /**
+     * 获取查询结果缓存
+     *
+     * @return null 表示缓存已过期或不存在
+     */
+    List<Map<String, Object>> getQueryResult(Long recordId);
+
+    /**
+     * 判断查询结果缓存是否存在
+     */
+    boolean hasQueryResult(Long recordId);
 }

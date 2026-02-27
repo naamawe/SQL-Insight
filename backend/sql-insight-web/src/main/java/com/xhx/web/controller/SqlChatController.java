@@ -8,10 +8,8 @@ import com.xhx.common.result.Result;
 import com.xhx.core.model.dto.SqlChatRequest;
 import com.xhx.core.model.dto.SqlChatResponse;
 import com.xhx.ai.listener.ChatStreamListener;
-import com.xhx.core.service.sql.ChatSessionService;
-import com.xhx.core.service.sql.SqlChatApiService;
-import com.xhx.core.service.sql.SqlExecutorService;
-import com.xhx.core.service.sql.SqlGeneratorService;
+import com.xhx.core.model.vo.ChatRecordVO;
+import com.xhx.core.service.sql.*;
 import com.xhx.dal.entity.ChatSession;
 import com.xhx.web.adapter.SseChatAdapter;
 import jakarta.validation.Valid;
@@ -63,6 +61,7 @@ public class SqlChatController {
     private final ChatSessionService chatSessionService;
     private final NlFeedbackGenerator nlFeedbackGenerator;
     private final SqlChatApiService sqlChatApiService;
+    private final ChatRecordService chatRecordService;
 
     /**
      * 阻塞模式 AI 对话
@@ -182,5 +181,38 @@ public class SqlChatController {
                 .total(data.size())
                 .summary(summary)
                 .build();
+    }
+
+    /**
+     * 获取某个会话下的完整对话记录（历史记录核心接口）
+     * 返回数据包含：问题、SQL、摘要、查询结果（Redis有效期内）、是否过期
+     */
+    @GetMapping("/sessions/{sessionId}/records")
+    public Result<List<ChatRecordVO>> getSessionRecords(@PathVariable Long sessionId) {
+        // 先校验会话归属权，防越权访问
+        chatSessionService.getSessionDetail(UserContext.getUserId(), sessionId);
+        return Result.success(chatRecordService.getBySessionId(sessionId));
+    }
+
+    /**
+     * 重新执行历史记录中的 SQL（结果缓存过期后使用）
+     * 直接用原 SQL 查询，不经过 AI，结果重新写入 Redis
+     */
+    @PostMapping("/records/{recordId}/rerun")
+    public Result<List<Map<String, Object>>> rerunRecord(@PathVariable Long recordId) {
+        Long userId = UserContext.getUserId();
+
+        // 查出历史记录（这里需要 ChatRecordService 提供 getById 方法，见下方补充）
+        ChatRecordVO record = chatRecordService.getById(recordId, userId);
+
+        List<Map<String, Object>> data = sqlExecutorService.execute(
+                chatSessionService.getSessionDetail(userId, record.getSessionId()).getDataSourceId(),
+                record.getSqlText()
+        );
+
+        // 重新写入缓存
+        chatRecordService.cacheResult(recordId, data);
+
+        return Result.success(data);
     }
 }

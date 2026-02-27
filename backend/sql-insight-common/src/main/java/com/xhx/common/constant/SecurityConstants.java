@@ -52,4 +52,14 @@ public class SecurityConstants {
     public static final long SCHEMA_TTL_MINUTES = 60;
     public static final long LOCK_TTL_SECONDS = 5;
     public static final long TOKEN_RENEW_THRESHOLD_MINUTES = 10;
+
+    /** 查询结果缓存 key 前缀 */
+    public static final String QUERY_RESULT_KEY = "query:result:";
+
+    /** 查询结果缓存过期时间：24 小时 */
+    public static final long QUERY_RESULT_TTL_HOURS = 24L;
+
+    /** 查询结果最大缓存行数 */
+    public static final int QUERY_RESULT_MAX_ROWS = 100;
+
 }
