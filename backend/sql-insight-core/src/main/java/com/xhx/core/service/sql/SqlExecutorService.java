@@ -3,6 +3,9 @@ package com.xhx.core.service.sql;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * @author master
+ */
 public interface SqlExecutorService {
     /**
      * 执行 SQL 并返回结果

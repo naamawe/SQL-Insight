@@ -4,7 +4,6 @@ import com.xhx.ai.listener.ChatStreamListener;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.StreamingResponseHandler;
-import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.output.Response;
 import lombok.RequiredArgsConstructor;
@@ -19,10 +18,6 @@ import java.util.Map;
  * <p>
  * 职责：在 SQL 执行完成后，用自然语言向用户描述查询结果。
  * <p>
- * 提供两种模式：
- *   - {@link #generate}：阻塞模式，兼容旧版 /chat 接口
- *   - {@link #generateStream}：流式模式，配合 SSE /chat/stream 接口逐 token 推送
- * <p>
  * 设计原则：
  *   - 使用独立的一次性对话，不写入 ChatMemory，不影响对话历史
  *   - 只传摘要信息（行数 + 前 MAX_SAMPLE_ROWS 行），避免大结果集超 token 限制
@@ -35,7 +30,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class NlFeedbackGenerator {
 
-    private final ChatLanguageModel chatLanguageModel;
     private final StreamingChatLanguageModel streamingChatLanguageModel;
 
     /** 传给 AI 的最大样本行数，避免结果集过大导致 token 超限 */
@@ -50,33 +44,6 @@ public class NlFeedbackGenerator {
             3. 不超过 50 个字
             4. 如果结果为空，说明未找到符合条件的数据
             """;
-
-    // ==================== 阻塞模式（兼容旧 /chat 接口） ====================
-
-    /**
-     * 阻塞生成摘要
-     *
-     * @return 摘要文本；失败时返回 null，由调用方决定是否降级
-     */
-    public String generate(String question, String sql, List<Map<String, Object>> data) {
-        try {
-            String userContent = buildUserContent(question, sql, data);
-            var response = chatLanguageModel.generate(
-                    List.of(
-                            SystemMessage.from(SYSTEM_PROMPT),
-                            UserMessage.from(userContent)
-                    )
-            );
-            String summary = response.content().text();
-            log.debug("摘要生成成功: {}", summary);
-            return summary;
-        } catch (Exception e) {
-            log.warn("摘要生成失败，静默降级: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    // ==================== 流式模式（SSE /chat/stream 接口） ====================
 
     /**
      * 流式生成摘要，通过监听器逐 token 推送结论。
