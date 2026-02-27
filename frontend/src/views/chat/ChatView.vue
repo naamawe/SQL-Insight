@@ -38,8 +38,18 @@ watch(() => chatStore.currentSessionId, (id) => {
   } else {
     const s = chatStore.sessions.find(s => s.id === id)
     if (s) currentDataSourceId.value = s.dataSourceId
-    messages.value = []
+    // sending 期间由 onData 自动创建会话，不清空消息
+    if (!sending.value) {
+      messages.value = []
+    }
   }
+})
+
+// currentSessionId 已是 null 时删除会话，用独立信号强制清空
+watch(() => chatStore.clearChatSignal, () => {
+  messages.value = []
+  currentDataSourceId.value = null
+  question.value = ''
 })
 
 // ── 消息列表 ──────────────────────────────────────────
@@ -144,158 +154,162 @@ function handleOutsideClick(e: MouseEvent) {
 <template>
   <div class="chat-layout">
     <!-- ── 主对话区 ── -->
-    <div class="chat-main" :class="{ centered: !messages.length }">
+    <div class="chat-main">
 
       <!-- ── 空状态：居中欢迎屏 ── -->
-      <div v-if="!messages.length" class="welcome-screen">
-        <div class="welcome-logo">
-          <svg width="44" height="44" viewBox="0 0 36 36" fill="none">
-            <rect width="36" height="36" rx="10" fill="#D97706"/>
-            <path d="M10 13h16M10 18h10M10 23h13" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-          </svg>
-        </div>
-        <h2 class="welcome-title">SQL Insight</h2>
-        <p class="welcome-desc">用自然语言查询你的数据库，AI 帮你生成并执行 SQL</p>
+      <Transition name="welcome">
+        <div v-if="!messages.length" class="welcome-screen">
+          <div class="welcome-logo">
+            <svg width="44" height="44" viewBox="0 0 36 36" fill="none">
+              <rect width="36" height="36" rx="10" fill="#D97706"/>
+              <path d="M10 13h16M10 18h10M10 23h13" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h2 class="welcome-title">SQL Insight</h2>
+          <p class="welcome-desc">用自然语言查询你的数据库，AI 帮你生成并执行 SQL</p>
 
-        <!-- 居中输入框 -->
-        <div class="welcome-input-wrap">
-          <div class="input-box input-box--welcome">
-            <textarea
-              v-model="question"
-              class="input-textarea welcome-textarea"
-              placeholder="输入你的问题..."
-              rows="1"
-              @keydown="handleKeydown"
-            />
-            <div class="input-toolbar">
-              <!-- 自定义数据源胶囊按钮 -->
-              <div class="ds-pill-wrap">
-                <button class="ds-pill" :class="{ active: currentDataSourceId }" @click="toggleDsDropdown">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-                  </svg>
-                  <span>{{ currentDsName ?? '选择数据源' }}</span>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :style="{ transform: dsDropdownOpen ? 'rotate(180deg)' : '', transition: 'transform 0.15s' }">
-                    <polyline points="6 9 12 15 18 9"/>
-                  </svg>
-                </button>
-                <div v-if="dsDropdownOpen" class="ds-dropdown">
-                  <div v-if="!dataSources.length" class="ds-dropdown-empty">暂无数据源</div>
-                  <button
-                    v-for="ds in dataSources"
-                    :key="ds.id"
-                    class="ds-dropdown-item"
-                    :class="{ selected: currentDataSourceId === ds.id }"
-                    @click="selectDs(ds.id)"
-                  >
+          <!-- 居中输入框 -->
+          <div class="welcome-input-wrap">
+            <div class="input-box input-box--welcome">
+              <textarea
+                v-model="question"
+                class="input-textarea welcome-textarea"
+                placeholder="输入你的问题..."
+                rows="1"
+                @keydown="handleKeydown"
+              />
+              <div class="input-toolbar">
+                <!-- 自定义数据源胶囊按钮 -->
+                <div class="ds-pill-wrap">
+                  <button class="ds-pill" :class="{ active: currentDataSourceId }" @click="toggleDsDropdown">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
                     </svg>
-                    {{ ds.connName }}
-                    <svg v-if="currentDataSourceId === ds.id" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto">
-                      <polyline points="20 6 9 17 4 12"/>
+                    <span>{{ currentDsName ?? '选择数据源' }}</span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :style="{ transform: dsDropdownOpen ? 'rotate(180deg)' : '', transition: 'transform 0.15s' }">
+                      <polyline points="6 9 12 15 18 9"/>
                     </svg>
                   </button>
+                  <div v-if="dsDropdownOpen" class="ds-dropdown">
+                    <div v-if="!dataSources.length" class="ds-dropdown-empty">暂无数据源</div>
+                    <button
+                      v-for="ds in dataSources"
+                      :key="ds.id"
+                      class="ds-dropdown-item"
+                      :class="{ selected: currentDataSourceId === ds.id }"
+                      @click="selectDs(ds.id)"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                      </svg>
+                      {{ ds.connName }}
+                      <svg v-if="currentDataSourceId === ds.id" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
+                <div style="flex:1" />
+                <button class="send-btn" :disabled="!question.trim() || !currentDataSourceId" @click="sendMessage">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  </svg>
+                </button>
               </div>
-              <div style="flex:1" />
-              <button class="send-btn" :disabled="!question.trim() || !currentDataSourceId" @click="sendMessage">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-                </svg>
-              </button>
             </div>
           </div>
         </div>
-      </div>
+      </Transition>
 
       <!-- ── 有消息时：正常对话布局 ── -->
-      <template v-else>
-        <!-- 消息列表 -->
-        <div ref="msgListRef" class="msg-list">
-          <div v-for="msg in messages" :key="msg.id" class="msg-row" :class="msg.role">
-            <div v-if="msg.role === 'user'" class="bubble user-bubble">{{ msg.content }}</div>
-            <div v-else class="bubble ai-bubble">
-              <div v-if="msg.loading && msg.stage" class="stage-hint">
-                <span class="stage-dot" />{{ msg.stage }}
-              </div>
-              <div v-if="msg.sql" class="sql-block">
-                <div class="sql-header" @click="toggleSql(msg.id)">
-                  <div class="sql-header-left">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-                    </svg>
-                    <span>生成的 SQL</span>
-                    <span v-if="msg.sqlCorrected" class="corrected-tag">已修正</span>
-                  </div>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :style="{ transform: expandedSql.has(msg.id) ? 'rotate(180deg)' : '', transition: 'transform 0.2s' }">
-                    <polyline points="6 9 12 15 18 9"/>
-                  </svg>
+      <Transition name="chat">
+        <div v-if="messages.length" class="chat-content">
+          <!-- 消息列表 -->
+          <div ref="msgListRef" class="msg-list">
+            <div v-for="msg in messages" :key="msg.id" class="msg-row" :class="msg.role">
+              <div v-if="msg.role === 'user'" class="bubble user-bubble">{{ msg.content }}</div>
+              <div v-else class="bubble ai-bubble">
+                <div v-if="msg.loading && msg.stage" class="stage-hint">
+                  <span class="stage-dot" />{{ msg.stage }}
                 </div>
-                <pre v-if="expandedSql.has(msg.id)" class="sql-code">{{ msg.sql }}</pre>
+                <div v-if="msg.sql" class="sql-block">
+                  <div class="sql-header" @click="toggleSql(msg.id)">
+                    <div class="sql-header-left">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                      </svg>
+                      <span>生成的 SQL</span>
+                      <span v-if="msg.sqlCorrected" class="corrected-tag">已修正</span>
+                    </div>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :style="{ transform: expandedSql.has(msg.id) ? 'rotate(180deg)' : '', transition: 'transform 0.2s' }">
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                  </div>
+                  <pre v-if="expandedSql.has(msg.id)" class="sql-code">{{ msg.sql }}</pre>
+                </div>
+                <div v-if="msg.tableData && msg.tableData.length" class="result-table-wrap">
+                  <div class="result-meta">共 {{ msg.total }} 条结果</div>
+                  <el-table :data="msg.tableData" size="small" class="result-table" max-height="300">
+                    <el-table-column v-for="col in Object.keys(msg.tableData[0])" :key="col" :prop="col" :label="col" min-width="100" show-overflow-tooltip />
+                  </el-table>
+                </div>
+                <div v-if="msg.content" class="ai-text">{{ msg.content }}</div>
+                <div v-if="msg.loading && !msg.stage" class="typing-dots"><span /><span /><span /></div>
               </div>
-              <div v-if="msg.tableData && msg.tableData.length" class="result-table-wrap">
-                <div class="result-meta">共 {{ msg.total }} 条结果</div>
-                <el-table :data="msg.tableData" size="small" class="result-table" max-height="300">
-                  <el-table-column v-for="col in Object.keys(msg.tableData[0])" :key="col" :prop="col" :label="col" min-width="100" show-overflow-tooltip />
-                </el-table>
-              </div>
-              <div v-if="msg.content" class="ai-text">{{ msg.content }}</div>
-              <div v-if="msg.loading && !msg.stage" class="typing-dots"><span /><span /><span /></div>
             </div>
           </div>
-        </div>
 
-        <!-- 底部输入区 -->
-        <div class="input-area-outer">
-        <div class="input-area">
-          <div class="input-box">
-            <textarea v-model="question" class="input-textarea" placeholder="输入你的问题，按 Enter 发送，Shift+Enter 换行..." rows="1" @keydown="handleKeydown" />
-            <div class="input-toolbar">
-              <!-- 数据源胶囊（新会话时显示选择器，已有会话时显示 badge） -->
-              <div v-if="!chatStore.currentSessionId" class="ds-pill-wrap">
-                <button class="ds-pill" :class="{ active: currentDataSourceId }" @click="toggleDsDropdown">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-                  </svg>
-                  <span>{{ currentDsName ?? '选择数据源' }}</span>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :style="{ transform: dsDropdownOpen ? 'rotate(180deg)' : '', transition: 'transform 0.15s' }">
-                    <polyline points="6 9 12 15 18 9"/>
-                  </svg>
-                </button>
-                <div v-if="dsDropdownOpen" class="ds-dropdown">
-                  <div v-if="!dataSources.length" class="ds-dropdown-empty">暂无数据源</div>
-                  <button v-for="ds in dataSources" :key="ds.id" class="ds-dropdown-item" :class="{ selected: currentDataSourceId === ds.id }" @click="selectDs(ds.id)">
+          <!-- 底部输入区 -->
+          <div class="input-area-outer">
+          <div class="input-area">
+            <div class="input-box">
+              <textarea v-model="question" class="input-textarea" placeholder="输入你的问题，按 Enter 发送，Shift+Enter 换行..." rows="1" @keydown="handleKeydown" />
+              <div class="input-toolbar">
+                <!-- 数据源胶囊（新会话时显示选择器，已有会话时显示 badge） -->
+                <div v-if="!chatStore.currentSessionId" class="ds-pill-wrap">
+                  <button class="ds-pill" :class="{ active: currentDataSourceId }" @click="toggleDsDropdown">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
                     </svg>
-                    {{ ds.connName }}
-                    <svg v-if="currentDataSourceId === ds.id" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto">
-                      <polyline points="20 6 9 17 4 12"/>
+                    <span>{{ currentDsName ?? '选择数据源' }}</span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :style="{ transform: dsDropdownOpen ? 'rotate(180deg)' : '', transition: 'transform 0.15s' }">
+                      <polyline points="6 9 12 15 18 9"/>
                     </svg>
                   </button>
+                  <div v-if="dsDropdownOpen" class="ds-dropdown">
+                    <div v-if="!dataSources.length" class="ds-dropdown-empty">暂无数据源</div>
+                    <button v-for="ds in dataSources" :key="ds.id" class="ds-dropdown-item" :class="{ selected: currentDataSourceId === ds.id }" @click="selectDs(ds.id)">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                      </svg>
+                      {{ ds.connName }}
+                      <svg v-if="currentDataSourceId === ds.id" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
+                <div v-else-if="currentDsName" class="ds-badge">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                  </svg>
+                  {{ currentDsName }}
+                </div>
+                <div style="flex:1" />
+                <button v-if="sending" class="stop-btn" @click="stopStream">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                </button>
+                <button v-else class="send-btn" :disabled="!question.trim() || (!chatStore.currentSessionId && !currentDataSourceId)" @click="sendMessage">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  </svg>
+                </button>
               </div>
-              <div v-else-if="currentDsName" class="ds-badge">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-                </svg>
-                {{ currentDsName }}
-              </div>
-              <div style="flex:1" />
-              <button v-if="sending" class="stop-btn" @click="stopStream">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-              </button>
-              <button v-else class="send-btn" :disabled="!question.trim() || (!chatStore.currentSessionId && !currentDataSourceId)" @click="sendMessage">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-                </svg>
-              </button>
             </div>
           </div>
+          </div>
         </div>
-        </div>
-      </template>
+      </Transition>
     </div>
   </div>
 </template>
@@ -308,23 +322,59 @@ function handleOutsideClick(e: MouseEvent) {
   background: var(--color-bg-primary);
 }
 
-.chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--color-bg-primary); }
-
-/* 居中模式（无消息时） */
-.chat-main.centered {
-  align-items: center;
-  justify-content: flex-start;
-  padding-top: 15vh;
+.chat-main {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: var(--color-bg-primary);
 }
 
+/* ── 欢迎屏：绝对定位铺满，内容自己居中 ── */
 .welcome-screen {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-start;
+  padding: 15vh 24px 40px;
+  overflow-y: auto;
   gap: 14px;
-  width: 100%;
-  max-width: 640px;
-  padding: 0 24px;
+}
+
+/* ── 对话内容：绝对定位铺满，flex column ── */
+.chat-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── 欢迎屏过渡 ── */
+.welcome-enter-active {
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.welcome-enter-from {
+  opacity: 0;
+  transform: translateY(14px);
+}
+.welcome-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  pointer-events: none;
+}
+.welcome-leave-to {
+  opacity: 0;
+  transform: translateY(-18px) scale(0.97);
+}
+
+/* ── 对话区过渡 ── */
+.chat-enter-active {
+  transition: opacity 0.3s ease 0.15s, transform 0.3s ease 0.15s;
+}
+.chat-enter-from {
+  opacity: 0;
+  transform: translateY(16px);
 }
 
 .welcome-logo { margin-bottom: 4px; }
@@ -350,6 +400,7 @@ function handleOutsideClick(e: MouseEvent) {
 
 .welcome-input-wrap {
   width: 100%;
+  max-width: 640px;
   margin-top: 8px;
 }
 

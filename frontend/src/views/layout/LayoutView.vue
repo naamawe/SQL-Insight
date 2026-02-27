@@ -164,7 +164,7 @@ async function confirmLogout() {
             <div class="session-section-header">
               <span>对话记录</span>
             </div>
-            <div class="session-list">
+            <TransitionGroup tag="div" name="session-item" class="session-list">
               <div
                 v-for="s in chatStore.sessions"
                 :key="s.id"
@@ -182,8 +182,8 @@ async function confirmLogout() {
                   </svg>
                 </button>
               </div>
-              <div v-if="!chatStore.sessions.length && !chatStore.loading" class="session-empty">暂无对话记录</div>
-            </div>
+              <div v-if="!chatStore.sessions.length && !chatStore.loading" key="empty" class="session-empty">暂无对话记录</div>
+            </TransitionGroup>
           </div>
         </template>
       </nav>
@@ -499,6 +499,36 @@ async function confirmLogout() {
   text-align: center;
   font-size: 11px;
   color: var(--color-text-sidebar-muted);
+}
+
+/* ── 会话列表增删动画 ── */
+/* 删除：向左淡出 + 高度收缩（让下方条目顶上来） */
+.session-item-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease,
+              max-height 0.25s ease, padding-top 0.25s ease, padding-bottom 0.25s ease;
+  overflow: hidden;
+  max-height: 40px;
+}
+.session-item-leave-to {
+  opacity: 0;
+  transform: translateX(-8px);
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* 留下的条目平滑位移顶上来 */
+.session-item-move {
+  transition: transform 0.25s ease;
+}
+
+/* 新增：从左淡入（新建会话时） */
+.session-item-enter-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.session-item-enter-from {
+  opacity: 0;
+  transform: translateX(-6px);
 }
 
 .nav-item {

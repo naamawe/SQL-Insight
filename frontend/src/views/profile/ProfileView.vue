@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { userAuthApi, rolePermissionApi } from '@/api/permission'
@@ -10,9 +10,47 @@ import type { DataSourceVO } from '@/types'
 const router = useRouter()
 const authStore = useAuthStore()
 
+const roleColorMap: Record<string, string> = {
+  SUPER_ADMIN: '#7c3aed',
+  ADMIN:       '#d97706',
+  USER:        '#16a34a',
+}
+
 const dsList = ref<DataSourceVO[]>([])
 const tableMap = ref<Record<number, string[]>>({})
 const loading = ref(false)
+
+// ── 数据源列表搜索 ─────────────────────────────────────
+const dsListSearch = ref('')
+const filteredDsList = computed(() => {
+  if (!dsListSearch.value.trim()) return dsList.value
+  const q = dsListSearch.value.trim().toLowerCase()
+  return dsList.value.filter(ds =>
+    ds.connName.toLowerCase().includes(q) ||
+    ds.host.toLowerCase().includes(q) ||
+    ds.databaseName.toLowerCase().includes(q)
+  )
+})
+
+// ── 数据源详情弹窗 ─────────────────────────────────────
+const activeDs = ref<DataSourceVO | null>(null)
+const dsSearch = ref('')
+
+function openDsDetail(ds: DataSourceVO) {
+  activeDs.value = ds
+  dsSearch.value = ''
+}
+
+function closeDsDetail() {
+  activeDs.value = null
+}
+
+const filteredActiveTables = computed(() => {
+  if (!activeDs.value) return []
+  const tables = tableMap.value[activeDs.value.id] ?? []
+  if (!dsSearch.value.trim()) return tables
+  return tables.filter(t => t.toLowerCase().includes(dsSearch.value.trim().toLowerCase()))
+})
 
 // ── 修改密码 ──────────────────────────────────────────
 const showPwdForm = ref(false)
@@ -80,7 +118,14 @@ onMounted(async () => {
         <div class="hero-avatar">{{ authStore.userInfo?.username?.charAt(0).toUpperCase() }}</div>
         <div class="hero-info">
           <h1 class="hero-name">{{ authStore.userInfo?.username }}</h1>
-          <span class="hero-role-badge">{{ authStore.role }}</span>
+          <span
+            class="hero-role-badge"
+            :style="{
+              background: (roleColorMap[authStore.role] ?? '#4f46e5') + '18',
+              color: roleColorMap[authStore.role] ?? '#4f46e5',
+              borderColor: (roleColorMap[authStore.role] ?? '#4f46e5') + '50',
+            }"
+          >{{ authStore.role }}</span>
         </div>
       </div>
 
@@ -132,11 +177,24 @@ onMounted(async () => {
 
         <!-- 授权数据源卡片 -->
         <div class="profile-card full-width">
-          <div class="card-title">授权数据源</div>
+          <div class="card-title">
+            授权数据源
+            <span v-if="dsList.length" class="ds-count-badge">{{ dsList.length }}</span>
+            <label class="ds-list-search" v-if="dsList.length">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input v-model="dsListSearch" class="ds-list-search-input" placeholder="搜索数据源..." />
+              <button v-if="dsListSearch" class="ds-list-search-clear" @click.prevent="dsListSearch = ''">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </label>
+          </div>
           <div v-if="loading" class="ds-empty">加载中...</div>
           <div v-else-if="!dsList.length" class="ds-empty">暂无授权数据源</div>
+          <div v-else-if="!filteredDsList.length" class="ds-empty">无匹配的数据源</div>
           <div v-else class="ds-grid">
-            <div v-for="ds in dsList" :key="ds.id" class="ds-card">
+            <div v-for="ds in filteredDsList" :key="ds.id" class="ds-card" @click="openDsDetail(ds)">
               <div class="ds-card-header">
                 <span class="ds-type-badge" :style="{ background: ds.dbType === 'mysql' ? '#00758f' : ds.dbType === 'postgresql' ? '#336791' : '#cc2927' }">
                   {{ ds.dbType.toUpperCase() }}
@@ -146,11 +204,14 @@ onMounted(async () => {
                   <span class="ds-host">{{ ds.host }}:{{ ds.port }}/{{ ds.databaseName }}</span>
                 </div>
               </div>
-              <div class="ds-tables">
-                <template v-if="tableMap[ds.id]?.length">
-                  <span v-for="t in tableMap[ds.id]" :key="t" class="table-tag">{{ t }}</span>
+              <div class="ds-preview">
+                <template v-if="!tableMap[ds.id]?.length">
+                  <span class="all-tables-badge">全部可访问</span>
                 </template>
-                <span v-else class="no-tables">无表权限限制（可访问全部表）</span>
+                <template v-else>
+                  <span v-for="t in tableMap[ds.id].slice(0, 3)" :key="t" class="table-tag">{{ t }}</span>
+                  <span v-if="tableMap[ds.id].length > 3" class="table-more">+{{ tableMap[ds.id].length - 3 }} 个表</span>
+                </template>
               </div>
             </div>
           </div>
@@ -158,20 +219,81 @@ onMounted(async () => {
 
       </div>
     </div>
+
+    <!-- 数据源详情弹窗 -->
+    <Teleport to="body">
+    <div v-if="activeDs" class="ds-modal-overlay" @click.self="closeDsDetail">
+      <div class="ds-modal">
+        <div class="ds-modal-header">
+          <div class="ds-modal-title-group">
+            <span class="ds-type-badge" :style="{ background: activeDs.dbType === 'mysql' ? '#00758f' : activeDs.dbType === 'postgresql' ? '#336791' : '#cc2927' }">
+              {{ activeDs.dbType.toUpperCase() }}
+            </span>
+            <div>
+              <div class="ds-modal-name">{{ activeDs.connName }}</div>
+              <div class="ds-modal-host">{{ activeDs.host }}:{{ activeDs.port }}/{{ activeDs.databaseName }}</div>
+            </div>
+          </div>
+          <button class="ds-modal-close" @click="closeDsDetail">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div class="ds-modal-search">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input v-model="dsSearch" class="ds-search-input" placeholder="搜索表名..." autofocus />
+        </div>
+
+        <div class="ds-modal-body">
+          <template v-if="!tableMap[activeDs.id]?.length">
+            <div class="ds-no-limit">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              无表权限限制，可访问该数据源全部表
+            </div>
+          </template>
+          <template v-else-if="filteredActiveTables.length">
+            <div class="ds-table-grid">
+              <span v-for="t in filteredActiveTables" :key="t" class="table-tag-lg">{{ t }}</span>
+            </div>
+          </template>
+          <div v-else class="ds-no-result">无匹配的表名</div>
+        </div>
+
+        <div class="ds-modal-footer">
+          <span class="ds-table-count" v-if="tableMap[activeDs.id]?.length">
+            共 <strong>{{ tableMap[activeDs.id].length }}</strong> 张授权表
+            <template v-if="dsSearch && filteredActiveTables.length !== tableMap[activeDs.id].length">
+              ，匹配 <strong>{{ filteredActiveTables.length }}</strong> 张
+            </template>
+          </span>
+        </div>
+      </div>
+    </div>
+  </Teleport>
   </div>
 </template>
 
 <style scoped>
 .profile-page {
-  min-height: 100%;
+  height: 100%;
   background: var(--color-bg-base);
   padding: 32px;
-  overflow-y: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
 }
 
 .profile-container {
+  flex: 1;
   max-width: 860px;
+  width: 100%;
   margin: 0 auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Hero */
@@ -234,11 +356,9 @@ onMounted(async () => {
   display: inline-block;
   padding: 3px 10px;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  color: var(--color-accent);
+  border: 1px solid transparent;
   font-size: 12px;
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.5px;
   width: fit-content;
 }
@@ -247,10 +367,18 @@ onMounted(async () => {
 .profile-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto 1fr;
   gap: 16px;
+  flex: 1;
+  overflow: hidden;
 }
 
-.full-width { grid-column: 1 / -1; }
+.full-width {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
 
 /* Card */
 .profile-card {
@@ -258,6 +386,7 @@ onMounted(async () => {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 20px 24px;
+  overflow: hidden;
 }
 
 .card-title {
@@ -267,6 +396,84 @@ onMounted(async () => {
   text-transform: uppercase;
   letter-spacing: 0.8px;
   margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.ds-list-search {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px 0 7px;
+  border-radius: 13px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-base);
+  color: var(--color-text-disabled);
+  cursor: text;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 400;
+}
+.ds-list-search:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 12%, transparent);
+  background: var(--color-bg-surface);
+  color: var(--color-accent);
+}
+
+.ds-list-search-input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 12px;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  width: 120px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 400;
+  transition: width 0.2s;
+}
+.ds-list-search:focus-within .ds-list-search-input { width: 160px; }
+.ds-list-search-input::placeholder { color: var(--color-text-disabled); }
+
+.ds-list-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-text-disabled);
+  color: var(--color-bg-surface);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.ds-list-search-clear:hover { opacity: 1; }
+
+.ds-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .info-row {
@@ -359,7 +566,15 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+  align-content: start;
 }
+
+.ds-grid::-webkit-scrollbar { width: 4px; }
+.ds-grid::-webkit-scrollbar-track { background: transparent; }
+.ds-grid::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
 
 .ds-card {
   border: 1px solid var(--color-border);
@@ -368,6 +583,14 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.ds-card:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  background: var(--color-bg-input);
 }
 
 .ds-card-header {
@@ -387,10 +610,19 @@ onMounted(async () => {
 }
 
 .ds-name-group { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.ds-name { font-size: 13px; font-weight: 500; color: var(--color-text-primary); }
+.ds-name { font-size: 13px; font-weight: 500; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ds-host { font-size: 11px; color: var(--color-text-secondary); font-family: var(--font-mono); }
 
-.ds-tables { display: flex; flex-wrap: wrap; gap: 4px; }
+.ds-preview { display: flex; flex-wrap: wrap; gap: 4px; min-height: 22px; }
+
+.all-tables-badge {
+  font-size: 11px;
+  color: #16a34a;
+  background: #16a34a12;
+  border: 1px solid #16a34a30;
+  border-radius: var(--radius-sm);
+  padding: 1px 8px;
+}
 
 .table-tag {
   padding: 2px 8px;
@@ -401,6 +633,167 @@ onMounted(async () => {
   color: var(--color-text-secondary);
 }
 
+.table-more {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-input);
+  border: 1px dashed var(--color-border);
+}
+
 .no-tables { font-size: 11px; color: var(--color-text-disabled); font-style: italic; }
 .ds-empty { font-size: 13px; color: var(--color-text-disabled); text-align: center; padding: 20px 0; }
+
+/* ── 数据源详情弹窗 ── */
+.ds-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.ds-modal {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  width: 520px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.14);
+  animation: modal-in 0.15s ease;
+  overflow: hidden;
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.95) translateY(6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.ds-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.ds-modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ds-modal-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 2px;
+}
+
+.ds-modal-host {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+}
+
+.ds-modal-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.ds-modal-close:hover { background: var(--color-bg-input); color: var(--color-text-primary); }
+
+.ds-modal-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.ds-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  font-family: inherit;
+}
+.ds-search-input::placeholder { color: var(--color-text-disabled); }
+
+.ds-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.ds-modal-body::-webkit-scrollbar { width: 4px; }
+.ds-modal-body::-webkit-scrollbar-track { background: transparent; }
+.ds-modal-body::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
+
+.ds-table-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.table-tag-lg {
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  transition: border-color 0.12s, color 0.12s;
+}
+.table-tag-lg:hover { border-color: var(--color-accent); color: var(--color-text-primary); }
+
+.ds-no-limit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #16a34a;
+  padding: 12px 0;
+}
+
+.ds-no-result {
+  font-size: 13px;
+  color: var(--color-text-disabled);
+  text-align: center;
+  padding: 24px 0;
+}
+
+.ds-modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.ds-table-count {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.ds-table-count strong { color: var(--color-accent); font-weight: 600; }
 </style>

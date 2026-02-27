@@ -1,7 +1,10 @@
 @import './variables.css';
 @import './reset.css';
 
+/* Element Plus 程序式 API 样式（ElMessage / ElNotification 等不走组件自动导入） */
+@import 'element-plus/theme-chalk/el-message.css';
+
 /* ElMessage 显示在 dialog 之上 */
 .el-message {
-  z-index: 9999 !important;
+  z-index: 10000 !important;
 }

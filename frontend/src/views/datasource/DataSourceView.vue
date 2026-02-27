@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { dataSourceApi } from '@/api/datasource'
 import type { DataSourceVO, DataSourceSaveDTO } from '@/types'
@@ -11,6 +11,21 @@ const tableData = ref<DataSourceVO[]>([])
 const total = ref(0)
 const searchName = ref('')
 const pagination = reactive({ current: 1, size: 10 })
+
+// ── 动态行高：让 pageSize 行恰好铺满表格区域 ─────────────
+const tableBodyRef = ref<HTMLElement | null>(null)
+const rowHeight = ref(52)
+const headerHeight = ref(45)
+let resizeObserver: ResizeObserver | null = null
+
+function updateRowHeight() {
+  if (!tableBodyRef.value) return
+  const headerEl = tableBodyRef.value.querySelector('.el-table__header-wrapper') as HTMLElement
+  const headerH = headerEl ? headerEl.offsetHeight : 45
+  headerHeight.value = headerH
+  const available = tableBodyRef.value.clientHeight - headerH
+  rowHeight.value = Math.max(44, Math.floor(available / pagination.size))
+}
 
 async function fetchList() {
   loading.value = true
@@ -186,7 +201,20 @@ const dbTypeBadge: Record<string, string> = {
   mysql: '#00758f', postgresql: '#336791', sqlserver: '#cc2927',
 }
 
-onMounted(fetchList)
+onMounted(() => {
+  fetchList()
+  nextTick(() => {
+    if (tableBodyRef.value) {
+      resizeObserver = new ResizeObserver(updateRowHeight)
+      resizeObserver.observe(tableBodyRef.value)
+      updateRowHeight()
+    }
+  })
+})
+
+onUnmounted(() => {
+  resizeObserver?.disconnect()
+})
 </script>
 
 <template>
@@ -228,10 +256,12 @@ onMounted(fetchList)
 
     <!-- 表格 -->
     <div class="table-card">
+      <div class="table-body" :class="{ 'is-empty': !loading && tableData.length === 0 }" ref="tableBodyRef">
       <el-table
         v-loading="loading"
         :data="tableData"
         row-key="id"
+        :row-style="{ height: rowHeight + 'px' }"
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="44" />
@@ -278,23 +308,26 @@ onMounted(fetchList)
             </div>
           </template>
         </el-table-column>
-        <template #empty>
-          <div class="empty-state">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-text-disabled)">
-              <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-            </svg>
-            <p>暂无数据源，点击「新增数据源」开始配置</p>
-          </div>
-        </template>
+        <template #empty><span /></template>
       </el-table>
+      <div v-if="!loading && tableData.length === 0" class="empty-overlay" :style="{ top: headerHeight + 'px' }">
+        <div class="empty-state">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-text-disabled)">
+            <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+          </svg>
+          <p>暂无数据源，点击「新增数据源」开始配置</p>
+        </div>
+      </div>
+      </div>
 
       <!-- 分页 -->
       <div class="pagination">
+        <span class="pagination-total">共 <strong>{{ total }}</strong> 条记录</span>
         <el-pagination
           v-model:current-page="pagination.current"
           :page-size="pagination.size"
           :total="total"
-          layout="total, prev, pager, next"
+          layout="prev, pager, next"
           background
           @current-change="handlePageChange"
         />
@@ -464,6 +497,7 @@ onMounted(fetchList)
 /* ── 表格卡片 ── */
 .table-card {
   flex: 1;
+  min-height: 0;
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -472,8 +506,28 @@ onMounted(fetchList)
   flex-direction: column;
 }
 
-.table-card :deep(.el-table) {
+.table-body {
   flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.table-body.is-empty :deep(.el-table__body-wrapper),
+.table-body.is-empty :deep(.el-scrollbar__bar) {
+  display: none;
+}
+
+.empty-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--color-bg-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.table-card :deep(.el-table) {
   font-size: 13px;
 }
 
@@ -564,7 +618,6 @@ onMounted(fetchList)
 
 /* 空状态 */
 .empty-state {
-  padding: 48px 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -578,8 +631,23 @@ onMounted(fetchList)
   padding: 14px 16px;
   border-top: 1px solid var(--color-border);
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   flex-shrink: 0;
+}
+
+.pagination-total {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 3px 12px;
+}
+
+.pagination-total strong {
+  color: var(--color-accent);
+  font-weight: 600;
 }
 
 .pagination :deep(.el-pagination.is-background .el-pager li.is-active) {
