@@ -35,6 +35,23 @@ public class QueryPolicyController {
      */
     @PostMapping
     public Result<Void> savePolicy(@RequestBody QueryPolicy policy) {
+        // 参数校验
+        if (policy.getRoleId() == null) {
+            return Result.error(400, "角色ID不能为空");
+        }
+        if (policy.getMaxLimit() == null || policy.getMaxLimit() < 1 || policy.getMaxLimit() > 10000) {
+            return Result.error(400, "最大行数限制必须在1-10000之间");
+        }
+        if (policy.getAllowJoin() == null || (policy.getAllowJoin() != 0 && policy.getAllowJoin() != 1)) {
+            return Result.error(400, "allowJoin必须为0或1");
+        }
+        if (policy.getAllowSubquery() == null || (policy.getAllowSubquery() != 0 && policy.getAllowSubquery() != 1)) {
+            return Result.error(400, "allowSubquery必须为0或1");
+        }
+        if (policy.getAllowAggregation() == null || (policy.getAllowAggregation() != 0 && policy.getAllowAggregation() != 1)) {
+            return Result.error(400, "allowAggregation必须为0或1");
+        }
+        
         queryPolicyService.saveOrUpdatePolicy(policy);
         return Result.success("策略保存成功", null);
     }

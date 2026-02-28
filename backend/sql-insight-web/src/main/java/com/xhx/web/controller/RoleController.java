@@ -36,6 +36,10 @@ public class RoleController {
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String roleName) {
+        // 限制单次最多查询100条
+        if (size > 100) {
+            size = 100;
+        }
         return Result.success(roleService.getRolePage(current, size, roleName));
     }
 

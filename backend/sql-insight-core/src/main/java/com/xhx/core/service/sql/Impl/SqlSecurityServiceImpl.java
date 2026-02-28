@@ -19,6 +19,8 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * SQL 安全校验服务
@@ -107,6 +109,12 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
             throw new RuntimeException("必须包含行数限制，最大允许 "
                     + policy.getMaxLimit() + " 行");
         }
+        
+        // 校验LIMIT值不能超过策略配置的最大值
+        int limitValue = extractLimitValue(upperSql, dbType);
+        if (limitValue > policy.getMaxLimit()) {
+            throw new RuntimeException("LIMIT 值不能超过 " + policy.getMaxLimit() + " 行");
+        }
     }
 
     /**
@@ -114,7 +122,6 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
      */
     private boolean hasRowLimit(String upperSql, String dbType) {
         return switch (dbType) {
-            case "oracle"    -> upperSql.contains("FETCH FIRST") || upperSql.contains("ROWNUM");
             case "sqlserver" -> upperSql.contains("TOP ");
             default          -> upperSql.contains("LIMIT");
         };
@@ -152,5 +159,39 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
             }
         }.getTables(statement);
         return found.get();
+    }
+
+    /**
+     * 提取SQL中的LIMIT值，支持多种数据库方言
+     * @param upperSql 大写的SQL语句
+     * @param dbType 数据库类型
+     * @return LIMIT值，提取失败返回0
+     */
+    private int extractLimitValue(String upperSql, String dbType) {
+        try {
+            switch (dbType) {
+                case "mysql":
+                case "postgresql":
+                    // 匹配 LIMIT 100 或 LIMIT 100 OFFSET 10
+                    Pattern pattern = Pattern.compile("LIMIT\\s+(\\d+)");
+                    Matcher matcher = pattern.matcher(upperSql);
+                    if (matcher.find()) {
+                        return Integer.parseInt(matcher.group(1));
+                    }
+                    break;
+                case "sqlserver":
+                    // 匹配 TOP 100
+                    pattern = Pattern.compile("TOP\\s+(\\d+)");
+                    matcher = pattern.matcher(upperSql);
+                    if (matcher.find()) {
+                        return Integer.parseInt(matcher.group(1));
+                    }
+                    break;
+            }
+        } catch (Exception e) {
+            log.warn("提取LIMIT值失败: {}", e.getMessage());
+        }
+        // 如果提取失败，返回0（会在后续检查中被拦截）
+        return 0;
     }
 }

@@ -28,6 +28,7 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     private final ChatSessionMapper chatSessionMapper;
     private final ChatMessageMapper chatMessageMapper;
     private final ChatRecordMapper  chatRecordMapper;
+    private final org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -80,6 +81,13 @@ public class ChatSessionServiceImpl implements ChatSessionService {
         // 防止越权
         getSessionDetail(userId, sessionId);
 
+        // 查询要删除的记录ID列表，用于清理缓存
+        List<Long> recordIds = chatRecordMapper.selectList(
+                new LambdaQueryWrapper<ChatRecord>()
+                        .select(ChatRecord::getId)
+                        .eq(ChatRecord::getSessionId, sessionId)
+        ).stream().map(ChatRecord::getId).toList();
+
         chatMessageMapper.delete(new LambdaQueryWrapper<ChatMessageEntity>()
                 .eq(ChatMessageEntity::getSessionId, sessionId));
 
@@ -87,7 +95,17 @@ public class ChatSessionServiceImpl implements ChatSessionService {
                 .eq(ChatRecord::getSessionId, sessionId));
 
         chatSessionMapper.deleteById(sessionId);
-        log.info("==> 会话 {} 已删除", sessionId);
+        
+        // 清理Redis缓存
+        if (!recordIds.isEmpty()) {
+            List<String> cacheKeys = recordIds.stream()
+                    .map(id -> com.xhx.common.constant.SecurityConstants.QUERY_RESULT_KEY + id)
+                    .toList();
+            redisTemplate.delete(cacheKeys);
+            log.info("==> 会话 {} 已删除，清理了 {} 条记录的缓存", sessionId, recordIds.size());
+        } else {
+            log.info("==> 会话 {} 已删除", sessionId);
+        }
     }
 
     @Override
@@ -109,6 +127,13 @@ public class ChatSessionServiceImpl implements ChatSessionService {
             return;
         }
 
+        // 查询要删除的记录ID列表，用于清理缓存
+        List<Long> recordIds = chatRecordMapper.selectList(
+                new LambdaQueryWrapper<ChatRecord>()
+                        .select(ChatRecord::getId)
+                        .in(ChatRecord::getSessionId, ownedSessionIds)
+        ).stream().map(ChatRecord::getId).toList();
+
         chatSessionMapper.delete(new LambdaQueryWrapper<ChatSession>()
                 .eq(ChatSession::getUserId, userId)
                 .in(ChatSession::getId, ownedSessionIds));
@@ -119,6 +144,16 @@ public class ChatSessionServiceImpl implements ChatSessionService {
         chatRecordMapper.delete(new LambdaQueryWrapper<ChatRecord>()
                 .in(ChatRecord::getSessionId, ownedSessionIds));
 
-        log.info("==> 批量删除会话成功，userId: {}，共删除 {} 个", userId, ownedSessionIds.size());
+        // 清理Redis缓存
+        if (!recordIds.isEmpty()) {
+            List<String> cacheKeys = recordIds.stream()
+                    .map(id -> com.xhx.common.constant.SecurityConstants.QUERY_RESULT_KEY + id)
+                    .toList();
+            redisTemplate.delete(cacheKeys);
+            log.info("==> 批量删除会话成功，userId: {}，共删除 {} 个会话，清理了 {} 条记录的缓存", 
+                    userId, ownedSessionIds.size(), recordIds.size());
+        } else {
+            log.info("==> 批量删除会话成功，userId: {}，共删除 {} 个", userId, ownedSessionIds.size());
+        }
     }
 }

@@ -103,6 +103,14 @@ public interface CacheService {
     List<Map<String, Object>> getQueryResult(Long recordId);
 
     /**
+     * 批量获取查询结果缓存（优化N+1查询问题）
+     *
+     * @param recordIds 记录ID列表
+     * @return Map<recordId, 查询结果>，不存在的key对应null
+     */
+    Map<Long, List<Map<String, Object>>> batchGetQueryResults(List<Long> recordIds);
+
+    /**
      * 判断查询结果缓存是否存在
      */
     boolean hasQueryResult(Long recordId);

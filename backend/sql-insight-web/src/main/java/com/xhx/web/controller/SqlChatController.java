@@ -36,6 +36,7 @@ public class SqlChatController {
     private final ChatSessionService  chatSessionService;
     private final SqlChatApiService   sqlChatApiService;
     private final ChatRecordService   chatRecordService;
+    private final SqlSecurityService  sqlSecurityService;
 
     /**
      * SSE 流式 AI 对话
@@ -61,6 +62,10 @@ public class SqlChatController {
     public Result<Page<ChatSession>> getSessions(
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "10") int size) {
+        // 限制单次最多查询100条，防止恶意请求
+        if (size > 100) {
+            size = 100;
+        }
         return Result.success(chatSessionService.getUserSessions(
                 UserContext.getUserId(), current, size));
     }
@@ -75,7 +80,19 @@ public class SqlChatController {
     public Result<Void> renameSession(
             @PathVariable Long sessionId,
             @RequestParam String title) {
-        chatSessionService.renameSession(UserContext.getUserId(), sessionId, title);
+        Long userId = UserContext.getUserId();
+        
+        // 参数校验
+        if (title == null || title.trim().isEmpty()) {
+            return Result.error(400, "会话标题不能为空");
+        }
+        if (title.length() > 100) {
+            return Result.error(400, "会话标题不能超过100个字符");
+        }
+        
+        log.info("[会话重命名] userId: {}, sessionId: {}, 新标题: {}", userId, sessionId, title);
+        
+        chatSessionService.renameSession(userId, sessionId, title.trim());
         return Result.success("会话标题已更新", null);
     }
 
@@ -87,7 +104,19 @@ public class SqlChatController {
 
     @DeleteMapping("/sessions/batch")
     public Result<Void> batchDeleteSessions(@RequestBody List<Long> sessionIds) {
-        chatSessionService.batchDeleteSessions(UserContext.getUserId(), sessionIds);
+        Long userId = UserContext.getUserId();
+        
+        // 参数校验
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return Result.error(400, "删除列表不能为空");
+        }
+        if (sessionIds.size() > 100) {
+            return Result.error(400, "单次最多删除100个会话");
+        }
+        
+        log.info("[批量删除会话] userId: {}, 会话数: {}", userId, sessionIds.size());
+        
+        chatSessionService.batchDeleteSessions(userId, sessionIds);
         return Result.success("批量删除成功", null);
     }
 
@@ -98,8 +127,16 @@ public class SqlChatController {
      */
     @GetMapping("/sessions/{sessionId}/records")
     public Result<List<ChatRecordVO>> getSessionRecords(@PathVariable Long sessionId) {
-        chatSessionService.getSessionDetail(UserContext.getUserId(), sessionId);
-        return Result.success(chatRecordService.getBySessionId(sessionId));
+        Long userId = UserContext.getUserId();
+        log.info("[历史记录查询] userId: {}, sessionId: {}", userId, sessionId);
+        
+        chatSessionService.getSessionDetail(userId, sessionId);
+        List<ChatRecordVO> records = chatRecordService.getBySessionId(sessionId);
+        
+        log.info("[历史记录查询完成] userId: {}, sessionId: {}, 记录数: {}", 
+                userId, sessionId, records.size());
+        
+        return Result.success(records);
     }
 
     /**
@@ -108,14 +145,32 @@ public class SqlChatController {
     @PostMapping("/records/{recordId}/rerun")
     public Result<List<Map<String, Object>>> rerunRecord(@PathVariable Long recordId) {
         Long userId = UserContext.getUserId();
+        
+        log.info("[历史记录重执行] 开始执行, userId: {}, recordId: {}", userId, recordId);
 
-        // getById 内部已做归属权校验
         ChatRecordVO record = chatRecordService.getById(recordId, userId);
+        
+        // 如果缓存仍然有效，直接返回，避免不必要的数据库查询
+        if (!record.getResultExpired() && record.getResultData() != null) {
+            log.info("[历史记录重执行] 缓存仍然有效，直接返回, userId: {}, recordId: {}", userId, recordId);
+            return Result.success(record.getResultData());
+        }
+        
+        Long dataSourceId = chatSessionService.getSessionDetail(userId, record.getSessionId()).getDataSourceId();
+        
+        // 重新校验 SQL 安全性，防止用户权限变更后越权访问
+        try {
+            sqlSecurityService.validate(record.getSqlText(), userId, dataSourceId);
+        } catch (Exception e) {
+            log.warn("[历史记录重执行失败] 安全校验未通过, userId: {}, recordId: {}, sql: {}, reason: {}", 
+                    userId, recordId, record.getSqlText(), e.getMessage());
+            throw e;
+        }
 
-        List<Map<String, Object>> data = sqlExecutorService.execute(
-                chatSessionService.getSessionDetail(userId, record.getSessionId()).getDataSourceId(),
-                record.getSqlText()
-        );
+        List<Map<String, Object>> data = sqlExecutorService.execute(dataSourceId, record.getSqlText());
+        
+        log.info("[历史记录重执行成功] userId: {}, recordId: {}, 原始行数: {}, 当前行数: {}", 
+                userId, recordId, record.getRowTotal(), data.size());
 
         chatRecordService.cacheResult(recordId, data);
         return Result.success(data);

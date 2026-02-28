@@ -22,7 +22,6 @@ import java.util.concurrent.ConcurrentHashMap;
  *   system-prompt-base.txt
  *   few-shot-mysql.txt
  *   few-shot-postgresql.txt
- *   few-shot-oracle.txt
  *   few-shot-sqlserver.txt
  * <p>
  * 此类属于 AI 能力层，不引入任何业务实体
@@ -61,7 +60,7 @@ public class PromptBuilder {
     /**
      * 拼装完整的 systemPrompt
      *
-     * @param dbType  数据库类型（mysql / postgresql / oracle / sqlserver）
+     * @param dbType  数据库类型（mysql / postgresql / sqlserver）
      * @param schema  经 SchemaLinker 过滤并格式化的 schema 文本
      * @param policy  格式化后的策略约束文本
      * @return 完整 systemPrompt，直接传给 SqlExecutor

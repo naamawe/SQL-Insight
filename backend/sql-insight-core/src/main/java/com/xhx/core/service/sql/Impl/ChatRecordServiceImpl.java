@@ -12,8 +12,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * @author master
@@ -60,7 +62,23 @@ public class ChatRecordServiceImpl implements ChatRecordService {
                         .eq(ChatRecord::getSessionId, sessionId)
                         .orderByAsc(ChatRecord::getCreateTime)
         );
-        return records.stream().map(this::toVO).toList();
+        
+        if (records.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 批量获取所有记录的缓存结果，避免N+1查询
+        List<Long> recordIds = records.stream().map(ChatRecord::getId).toList();
+        Map<Long, List<Map<String, Object>>> cacheMap = cacheService.batchGetQueryResults(recordIds);
+
+        log.debug("[历史记录查询] sessionId: {}, 记录数: {}, 缓存命中: {}", 
+                sessionId, records.size(), 
+                cacheMap.values().stream().filter(Objects::nonNull).count());
+
+        // 组装VO
+        return records.stream()
+                .map(record -> toVO(record, cacheMap.get(record.getId())))
+                .toList();
     }
 
     @Override
@@ -75,11 +93,19 @@ public class ChatRecordServiceImpl implements ChatRecordService {
 
     // ==================== 私有方法 ====================
 
+    /**
+     * 转换为VO（单条记录查询时使用）
+     */
     private ChatRecordVO toVO(ChatRecord record) {
-        boolean hasCache = cacheService.hasQueryResult(record.getId());
-        List<Map<String, Object>> resultData = hasCache
-                ? cacheService.getQueryResult(record.getId())
-                : null;
+        List<Map<String, Object>> resultData = cacheService.getQueryResult(record.getId());
+        return toVO(record, resultData);
+    }
+
+    /**
+     * 转换为VO（批量查询时使用，避免重复查询缓存）
+     */
+    private ChatRecordVO toVO(ChatRecord record, List<Map<String, Object>> resultData) {
+        boolean hasCache = resultData != null;
 
         return ChatRecordVO.builder()
                 .id(record.getId())
@@ -88,7 +114,7 @@ public class ChatRecordServiceImpl implements ChatRecordService {
                 .sqlText(record.getSqlText())
                 .summary(record.getSummary())
                 .rowTotal(record.getRowTotal())
-                .corrected(Short.valueOf((short) 1).equals(record.getCorrected()))
+                .corrected(record.getCorrected() != null && record.getCorrected() == 1)
                 .createTime(record.getCreateTime())
                 .resultData(resultData)
                 .resultExpired(!hasCache)

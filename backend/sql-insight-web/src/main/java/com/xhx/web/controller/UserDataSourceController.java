@@ -52,6 +52,11 @@ public class UserDataSourceController {
     @PostMapping("/{userId}")
     @PreAuthorize("hasRole('" + ADMIN + "')")
     public Result<Void> assign(@PathVariable Long userId, @RequestBody List<Long> dataSourceIds) {
+        // 参数校验
+        if (dataSourceIds != null && dataSourceIds.size() > 100) {
+            return Result.error(400, "单次最多授权100个数据源");
+        }
+        
         userDataSourceService.assignDataSources(userId, dataSourceIds);
         return Result.success();
     }

@@ -37,6 +37,8 @@ public class SqlExecutorServiceImpl implements SqlExecutorService {
         // 从 DB 读出的 password 是密文，建连接前解密
         javax.sql.DataSource ds = dataSourceManager.getDataSource(passwordCipher.decryptedCopy(config));
         JdbcTemplate jdbcTemplate = new JdbcTemplate(ds);
+        // 设置30秒超时，防止慢查询占用资源
+        jdbcTemplate.setQueryTimeout(30);
 
         try {
             log.info("执行目标库 SQL: {}", sql);

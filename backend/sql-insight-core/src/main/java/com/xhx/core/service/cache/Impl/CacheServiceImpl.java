@@ -294,6 +294,40 @@ public class CacheServiceImpl implements CacheService {
     }
 
     @Override
+    public Map<Long, List<Map<String, Object>>> batchGetQueryResults(List<Long> recordIds) {
+        if (recordIds == null || recordIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        // 构建所有的key
+        List<String> keys = recordIds.stream()
+                .map(id -> SecurityConstants.QUERY_RESULT_KEY + id)
+                .toList();
+
+        // 使用 multiGet 批量获取，比Pipeline更简单高效
+        List<String> jsonList = redisTemplate.opsForValue().multiGet(keys);
+
+        // 组装结果Map
+        Map<Long, List<Map<String, Object>>> resultMap = new HashMap<>();
+        for (int i = 0; i < recordIds.size(); i++) {
+            Long recordId = recordIds.get(i);
+            String json = jsonList != null ? jsonList.get(i) : null;
+            
+            if (json != null) {
+                List<Map<String, Object>> data = JSON.parseObject(json, new TypeReference<>() {});
+                resultMap.put(recordId, data);
+            } else {
+                resultMap.put(recordId, null);
+            }
+        }
+
+        log.debug("批量获取查询结果缓存，总数: {}, 命中: {}", 
+                recordIds.size(), resultMap.values().stream().filter(v -> v != null).count());
+
+        return resultMap;
+    }
+
+    @Override
     public boolean hasQueryResult(Long recordId) {
         return Boolean.TRUE.equals(
                 redisTemplate.hasKey(SecurityConstants.QUERY_RESULT_KEY + recordId));

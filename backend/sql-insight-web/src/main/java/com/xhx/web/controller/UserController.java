@@ -35,6 +35,10 @@ public class UserController {
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String username) {
+        // 限制单次最多查询100条
+        if (size > 100) {
+            size = 100;
+        }
         return Result.success(userService.getUserPage(current, size, username));
     }
 

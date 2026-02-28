@@ -13,7 +13,7 @@ public interface MetadataExtractor {
 
     /**
      * 判断当前提取器是否支持指定数据库类型
-     * @param dbType 数据库类型（mysql / postgresql / oracle / sqlserver）
+     * @param dbType 数据库类型（mysql / postgresql / sqlserver）
      */
     boolean supports(String dbType);
 

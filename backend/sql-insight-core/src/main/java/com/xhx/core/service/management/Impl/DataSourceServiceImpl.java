@@ -253,8 +253,13 @@ public class DataSourceServiceImpl implements DataSourceService {
     // ==================== 私有工具方法 ====================
 
     private void testConnectionInternal(DataSource ds) {
-        try (Connection conn = DriverManager.getConnection(
-                ds.toJdbcUrl(), ds.getUsername(), ds.getPassword())) {
+        // 设置连接超时，避免长时间等待
+        Properties props = new Properties();
+        props.setProperty("user", ds.getUsername());
+        props.setProperty("password", ds.getPassword());
+        props.setProperty("connectTimeout", "5000");
+        
+        try (Connection conn = DriverManager.getConnection(ds.toJdbcUrl(), props)) {
             if (conn == null || conn.isClosed()) {
                 throw new SQLException("连接建立失败");
             }

@@ -49,6 +49,17 @@ public class RolePermissionController {
      */
     @PostMapping
     public Result<Void> assignPermissions(@RequestBody PermissionAssignDTO dto) {
+        // 参数校验
+        if (dto.getRoleId() == null) {
+            return Result.error(400, "角色ID不能为空");
+        }
+        if (dto.getDataSourceId() == null) {
+            return Result.error(400, "数据源ID不能为空");
+        }
+        if (dto.getTableNames() != null && dto.getTableNames().size() > 500) {
+            return Result.error(400, "单次最多授权500张表");
+        }
+        
         rolePermissionService.assignTablePermissions(
                 dto.getRoleId(),
                 dto.getDataSourceId(),

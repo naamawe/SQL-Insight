@@ -37,6 +37,10 @@ public class DataSourceController {
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String connName) {
+        // 限制单次最多查询100条
+        if (size > 100) {
+            size = 100;
+        }
         return Result.success(dataSourceService.getDataSourcePage(current, size, connName));
     }
 
@@ -97,6 +101,14 @@ public class DataSourceController {
      */
     @DeleteMapping("/admin/batch")
     public Result<Void> batchDelete(@RequestBody List<Long> ids) {
+        // 参数校验
+        if (ids == null || ids.isEmpty()) {
+            return Result.error(400, "删除列表不能为空");
+        }
+        if (ids.size() > 50) {
+            return Result.error(400, "单次最多删除50个数据源");
+        }
+        
         dataSourceService.batchDeleteDataSources(ids);
         return Result.success("批量删除成功", null);
     }
