@@ -54,12 +54,23 @@ const registerFormRef = ref()
 
 // ── 登录 ──────────────────────────────────────────────
 async function handleLogin() {
-  await loginFormRef.value?.validate()
+  try {
+    await loginFormRef.value?.validate()
+  } catch (error: any) {
+    // 从验证错误中提取第一个错误信息
+    const firstError = Object.values(error)[0] as any
+    const errorMessage = firstError?.[0]?.message || '请填写完整的登录信息'
+    ElMessage.warning({ message: errorMessage, duration: 2000 })
+    return
+  }
+
   loading.value = true
   try {
     await authStore.login(loginForm.userName, loginForm.password)
     const redirect = (route.query.redirect as string) || '/'
     router.push(redirect)
+  } catch (error: any) {
+    ElMessage.error({ message: error?.message || '用户名或密码错误', duration: 2000 })
   } finally {
     loading.value = false
   }
@@ -67,14 +78,23 @@ async function handleLogin() {
 
 // ── 注册 ──────────────────────────────────────────────
 async function handleRegister() {
-  await registerFormRef.value?.validate()
+  try {
+    await registerFormRef.value?.validate()
+  } catch (error: any) {
+    // 从验证错误中提取第一个错误信息
+    const firstError = Object.values(error)[0] as any
+    const errorMessage = firstError?.[0]?.message || '请填写完整的注册信息'
+    ElMessage.warning({ message: errorMessage, duration: 2000 })
+    return
+  }
+
   loading.value = true
   try {
     await authApi.register({
       username: registerForm.userName,
       password: registerForm.password,
     })
-    ElMessage.success('注册成功，请登录')
+    ElMessage.success({ message: '注册成功，请登录', duration: 2000 })
     // 注册完切回登录 Tab，并回填用户名
     mode.value = 'login'
     loginForm.userName = registerForm.userName
@@ -82,6 +102,8 @@ async function handleRegister() {
     registerForm.userName = ''
     registerForm.password = ''
     registerForm.confirmPassword = ''
+  } catch (error: any) {
+    ElMessage.error({ message: error?.message || '注册失败，请稍后重试', duration: 2000 })
   } finally {
     loading.value = false
   }
@@ -336,9 +358,32 @@ async function handleRegister() {
   transition: border-color var(--transition-fast);
 }
 
-.auth-form :deep(.el-input__wrapper:hover),
+.auth-form :deep(.el-input__wrapper:hover) {
+  border-color: rgba(217, 119, 6, 0.4);
+}
+
 .auth-form :deep(.el-input__wrapper.is-focus) {
   border-color: var(--color-accent);
+}
+
+/* 隐藏 Element Plus 的错误提示 */
+.auth-form :deep(.el-form-item__error) {
+  display: none;
+}
+
+/* 输入框有错误时显示红色边框 */
+.auth-form :deep(.el-form-item.is-error .el-input__wrapper) {
+  border-color: #f56c6c;
+}
+
+/* 输入框获得焦点时，清除错误状态，显示正常边框 */
+.auth-form :deep(.el-form-item.is-error .el-input__wrapper.is-focus) {
+  border-color: var(--color-accent);
+}
+
+/* 输入框有错误且鼠标悬停时，显示浅红色 */
+.auth-form :deep(.el-form-item.is-error .el-input__wrapper:hover:not(.is-focus)) {
+  border-color: #f89898;
 }
 
 .submit-btn {

@@ -71,6 +71,15 @@ public class GlobalExceptionHandler {
     /**
      * 兜底：处理所有未知异常（500）
      */
+    @ExceptionHandler(RuntimeException.class)
+    public Result<String> handleException(RuntimeException e) {
+        log.error("系统未知异常", e);
+        return Result.error(500, "系统繁忙，请稍后再试");
+    }
+
+    /**
+     * 兜底：处理所有未知异常（500）
+     */
     @ExceptionHandler(Exception.class)
     public Result<String> handleException(Exception e) {
         log.error("系统未知异常", e);

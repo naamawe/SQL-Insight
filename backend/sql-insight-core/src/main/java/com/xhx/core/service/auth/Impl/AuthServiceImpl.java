@@ -3,6 +3,7 @@ package com.xhx.core.service.auth.Impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.xhx.common.constant.SystemPermissionConstants;
 import com.xhx.common.context.UserContext;
+import com.xhx.common.exception.ServiceException;
 import com.xhx.core.model.LoginUser;
 import com.xhx.core.model.dto.LoginDTO;
 import com.xhx.core.service.cache.CacheService;
@@ -80,7 +81,7 @@ public class AuthServiceImpl implements AuthService {
         );
         if (existUser != null) {
             log.warn("==> 注册失败：用户名 {} 已存在", username);
-            throw new RuntimeException("该用户名已被占用");
+            throw new ServiceException("该用户名已被占用");
         }
 
         String encodedPassword = passwordEncoder.encode(password);

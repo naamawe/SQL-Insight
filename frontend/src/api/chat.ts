@@ -1,5 +1,5 @@
 import http from '@/utils/http'
-import type { ChatSession } from '@/types'
+import type { ChatSession, ChatRecordVO } from '@/types'
 import type { PageResult } from '@/types'
 
 export interface SqlChatRequest {
@@ -20,6 +20,12 @@ export const chatApi = {
 
   batchDeleteSessions: (sessionIds: number[]) =>
     http.delete<void>('/ai/sessions/batch', { data: sessionIds }),
+
+  getSessionRecords: (sessionId: number) =>
+    http.get<ChatRecordVO[]>(`/ai/sessions/${sessionId}/records`),
+
+  rerunRecord: (recordId: number) =>
+    http.post<{ data: Record<string, unknown>[]; summary: string; total: number }>(`/ai/records/${recordId}/rerun`),
 }
 
 /**

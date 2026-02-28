@@ -29,16 +29,18 @@ http.interceptors.response.use(
       return data as any
     }
 
-    // 401：登录失效，跳转登录页
+    // 401：登录失效，跳转登录页（登录页本身不跳转，直接抛错由页面处理）
     if (code === 401) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('userInfo')
-      window.location.href = '/login'
+      if (!window.location.pathname.startsWith('/login')) {
+        localStorage.removeItem('token')
+        localStorage.removeItem('userInfo')
+        window.location.href = '/login'
+      }
       return Promise.reject(new Error(message))
     }
 
     // 其他业务错误：Toast 提示
-    ElMessage.error(message || '请求失败')
+    ElMessage.error({ message: message || '请求失败', duration: 2000 })
     return Promise.reject(new Error(message))
   },
   (error) => {
@@ -51,9 +53,9 @@ http.interceptors.response.use(
       500: '服务器内部错误',
     }
     const msg = messageMap[status] ?? '网络异常，请稍后重试'
-    ElMessage.error(msg)
+    ElMessage.error({ message: msg, duration: 2000 })
 
-    if (status === 401) {
+    if (status === 401 && !window.location.pathname.startsWith('/login')) {
       localStorage.removeItem('token')
       localStorage.removeItem('userInfo')
       window.location.href = '/login'

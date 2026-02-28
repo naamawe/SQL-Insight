@@ -59,6 +59,7 @@ export interface ChatSession {
   id: number
   userId: number
   dataSourceId: number
+  dataSourceName: string
   title: string
   createTime: string
 }
@@ -81,6 +82,23 @@ export interface ChatMessage {
   total?: number
   loading?: boolean
   stage?: string
+  // 历史记录相关
+  recordId?: number
+  resultExpired?: boolean
+}
+
+/** 对话历史记录 */
+export interface ChatRecordVO {
+  id: number
+  sessionId: number
+  question: string
+  sqlText: string
+  summary: string
+  rowTotal: number
+  corrected: boolean
+  createTime: string
+  resultData: Record<string, unknown>[] | null
+  resultExpired: boolean
 }
 
 /** 角色 */

@@ -5,6 +5,8 @@ import App from './App.vue'
 
 // 全局样式（变量 + reset）
 import '@/styles/index.css'
+// 美化 Element Plus Message 提示
+import '@/styles/message.css'
 // Element Plus 图标
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 

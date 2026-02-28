@@ -1,8 +1,11 @@
 package com.xhx.web.controller;
 
+import com.xhx.common.context.UserContext;
 import com.xhx.common.result.Result;
 import com.xhx.core.model.dto.PermissionAssignDTO;
+import com.xhx.core.model.vo.UserVO;
 import com.xhx.core.service.management.RolePermissionService;
+import com.xhx.core.service.management.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -11,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import static com.xhx.common.constant.SystemPermissionConstants.ADMIN;
+import static com.xhx.common.constant.SystemPermissionConstants.USER;
 
 /**
  * 角色表权限管理
@@ -23,6 +27,19 @@ import static com.xhx.common.constant.SystemPermissionConstants.ADMIN;
 public class RolePermissionController {
 
     private final RolePermissionService rolePermissionService;
+    private final UserService userService;
+
+    /**
+     * 获取当前用户自己的权限汇总（USER 可访问）
+     */
+    @GetMapping("/my-summary")
+    @PreAuthorize("hasRole('" + USER + "')")
+    public Result<Map<Long, List<String>>> getMyPermissionSummary() {
+        Long userId = UserContext.getUserId();
+        UserVO user = userService.getUserById(userId);
+        Map<Long, List<String>> summary = rolePermissionService.getRolePermissionSummary(user.getRoleId());
+        return Result.success(summary);
+    }
 
     /**
      * 获取角色在特定数据源下的已授权表列表

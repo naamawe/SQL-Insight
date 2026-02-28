@@ -31,7 +31,4 @@ public class UserSaveDTO {
             message = "系统权限值非法，只允许 SUPER_ADMIN / ADMIN / USER"
     )
     private String systemPermission;
-
-    @NotNull(message = "状态不能为空")
-    private Short status;
 }

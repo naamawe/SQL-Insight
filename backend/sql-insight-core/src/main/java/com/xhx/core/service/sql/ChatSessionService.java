@@ -2,6 +2,7 @@ package com.xhx.core.service.sql;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xhx.dal.entity.ChatSession;
+import com.xhx.core.model.vo.ChatSessionVO;
 import java.util.List;
 
 /**
@@ -18,7 +19,7 @@ public interface ChatSessionService {
     /**
      * 获取用户的会话列表（分页）
      */
-    Page<ChatSession> getUserSessions(Long userId, int current, int size);
+    Page<ChatSessionVO> getUserSessions(Long userId, int current, int size);
 
     /**
      * 获取会话详情

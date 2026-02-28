@@ -82,7 +82,7 @@ async function handleBatchDelete() {
   const ok = await showConfirm('批量删除', `确定删除选中的 ${selectedIds.value.length} 个数据源吗？`)
   if (!ok) return
   await dataSourceApi.batchRemove(selectedIds.value)
-  ElMessage.success('批量删除成功')
+  ElMessage.success({ message: '批量删除成功', duration: 2000 })
   fetchList()
 }
 
@@ -94,7 +94,7 @@ const formRef = ref()
 const submitting = ref(false)
 
 const defaultForm = (): DataSourceSaveDTO & { id?: number } => ({
-  connName: '', dbType: 'mysql', host: '', port: 3306,
+  connName: '', dbType: '', host: '', port: undefined as any,
   databaseName: '', username: '', password: '',
 })
 
@@ -114,7 +114,6 @@ const formRules = computed(() => ({
 function openAdd() {
   dialogMode.value = 'add'
   Object.assign(form, defaultForm())
-  testResult.value = null
   dialogVisible.value = true
 }
 
@@ -123,20 +122,30 @@ function openEdit(row: DataSourceVO) {
   Object.assign(form, { id: row.id, connName: row.connName, dbType: row.dbType,
     host: row.host, port: row.port, databaseName: row.databaseName,
     username: row.username, password: '' })
-  testResult.value = null
   dialogVisible.value = true
 }
 
 async function handleSubmit() {
-  await formRef.value?.validate()
+  // 手动验证必填字段
+  if (!form.connName || !form.dbType || !form.host || !form.port || !form.databaseName || !form.username) {
+    ElMessage.warning({ message: '请填写完整的数据库连接信息', duration: 2000 })
+    return
+  }
+
+  // 新增模式下密码必填
+  if (dialogMode.value === 'add' && !form.password) {
+    ElMessage.warning({ message: '请输入密码', duration: 2000 })
+    return
+  }
+
   submitting.value = true
   try {
     if (dialogMode.value === 'add') {
       await dataSourceApi.save(form)
-      ElMessage.success('数据源添加成功')
+      ElMessage.success({ message: '数据源添加成功', duration: 2000 })
     } else {
       await dataSourceApi.update(form as DataSourceUpdateDTO)
-      ElMessage.success('数据源更新成功')
+      ElMessage.success({ message: '数据源更新成功', duration: 2000 })
     }
     dialogVisible.value = false
     fetchList()
@@ -147,18 +156,20 @@ async function handleSubmit() {
 
 // ── 测试连接 ──────────────────────────────────────────
 const testing = ref(false)
-const testResult = ref<{ ok: boolean; msg: string } | null>(null)
 
 async function handleTest() {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
+  // 手动验证必填字段
+  if (!form.connName || !form.dbType || !form.host || !form.port || !form.databaseName || !form.username || !form.password) {
+    ElMessage.warning({ message: '请填写完整的数据库连接信息', duration: 2000 })
+    return
+  }
+
   testing.value = true
-  testResult.value = null
   try {
     await dataSourceApi.test(form)
-    testResult.value = { ok: true, msg: '连接成功' }
-  } catch (e: any) {
-    testResult.value = { ok: false, msg: e?.response?.data?.message || e?.message || '连接失败' }
+    ElMessage.success({ message: '连接成功', duration: 2000 })
+  } catch {
+    // HTTP 拦截器已经显示了错误提示，这里不再重复显示
   } finally {
     testing.value = false
   }
@@ -169,7 +180,7 @@ async function handleDelete(row: DataSourceVO) {
   const ok = await showConfirm('删除确认', `确定删除数据源「${row.connName}」吗？`)
   if (!ok) return
   await dataSourceApi.remove(row.id)
-  ElMessage.success('删除成功')
+  ElMessage.success({ message: '删除成功', duration: 2000 })
   fetchList()
 }
 
@@ -179,7 +190,7 @@ async function handleRefresh(row: DataSourceVO) {
   refreshingId.value = row.id
   try {
     await dataSourceApi.refreshTables(row.id)
-    ElMessage.success('Schema 缓存已刷新')
+    ElMessage.success({ message: 'Schema 缓存已刷新', duration: 2000 })
   } finally {
     refreshingId.value = null
   }
@@ -191,6 +202,25 @@ const dbTypeOptions = [
   { label: 'PostgreSQL', value: 'postgresql', port: 5432 },
   { label: 'SQL Server', value: 'sqlserver',  port: 1433 },
 ]
+
+const dbTypeDropdownOpen = ref(false)
+
+function toggleDbTypeDropdown() {
+  dbTypeDropdownOpen.value = !dbTypeDropdownOpen.value
+}
+
+function selectDbType(value: string) {
+  if (form.dbType === value) {
+    // 点击已选中的项，取消选中
+    form.dbType = ''
+    form.port = undefined as any
+  } else {
+    // 选中新项
+    form.dbType = value
+    onDbTypeChange(value)
+  }
+  dbTypeDropdownOpen.value = false
+}
 
 function onDbTypeChange(val: string) {
   const opt = dbTypeOptions.find(o => o.value === val)
@@ -210,10 +240,25 @@ onMounted(() => {
       updateRowHeight()
     }
   })
+  // 点击外部关闭下拉框
+  const closeDropdown = (e: MouseEvent) => {
+    const target = e.target as HTMLElement
+    if (!target.closest('.custom-select')) {
+      dbTypeDropdownOpen.value = false
+    }
+  }
+  document.addEventListener('click', closeDropdown)
+
+  // 保存引用以便清理
+  ;(window as any).__dbTypeCloseHandler = closeDropdown
 })
 
 onUnmounted(() => {
   resizeObserver?.disconnect()
+  if ((window as any).__dbTypeCloseHandler) {
+    document.removeEventListener('click', (window as any).__dbTypeCloseHandler)
+    delete (window as any).__dbTypeCloseHandler
+  }
 })
 </script>
 
@@ -324,7 +369,7 @@ onUnmounted(() => {
       <div class="pagination">
         <span class="pagination-total">共 <strong>{{ total }}</strong> 条记录</span>
         <el-pagination
-          v-model:current-page="pagination.current"
+          :current-page="pagination.current"
           :page-size="pagination.size"
           :total="total"
           layout="prev, pager, next"
@@ -349,72 +394,102 @@ onUnmounted(() => {
     </Teleport>
 
     <!-- 新增/编辑弹窗 -->
-    <el-dialog
-      v-model="dialogVisible"
-      :title="dialogTitle"
-      width="520px"
-      :close-on-click-modal="false"
-      append-to-body
-      class="ds-dialog"
-    >
-      <el-form
-        ref="formRef"
-        :model="form"
-        :rules="formRules"
-        label-width="100px"
-        class="ds-form"
-      >
-        <el-form-item label="连接名称" prop="connName">
-          <el-input v-model="form.connName" placeholder="如：生产环境 MySQL" />
-        </el-form-item>
-        <el-form-item label="数据库类型" prop="dbType">
-          <el-select v-model="form.dbType" style="width: 100%" @change="onDbTypeChange">
-            <el-option
-              v-for="opt in dbTypeOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="主机地址" prop="host">
-          <el-input v-model="form.host" placeholder="127.0.0.1" />
-        </el-form-item>
-        <el-form-item label="端口" prop="port">
-          <el-input-number v-model="form.port" :min="1" :max="65535" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="数据库名" prop="databaseName">
-          <el-input v-model="form.databaseName" placeholder="数据库名称" />
-        </el-form-item>
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" placeholder="数据库用户名" />
-        </el-form-item>
-        <el-form-item label="密码" prop="password">
-          <el-input
-            v-model="form.password"
-            type="password"
-            show-password
-            :placeholder="dialogMode === 'edit' ? '不填则不修改密码' : '数据库密码'"
-          />
-        </el-form-item>
-        <div v-if="testResult" class="test-result" :class="testResult.ok ? 'test-ok' : 'test-fail'">
-          <svg v-if="testResult.ok" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          {{ testResult.msg }}
-        </div>
-      </el-form>
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button class="btn-test" :loading="testing" @click="handleTest">测试连接</el-button>
-          <div class="footer-right">
-            <el-button @click="dialogVisible = false">取消</el-button>
-            <el-button type="primary" :loading="submitting" @click="handleSubmit">
-              {{ dialogMode === 'add' ? '添加' : '保存' }}
-            </el-button>
+    <Teleport to="body">
+      <div v-if="dialogVisible" class="custom-dialog-mask">
+        <div class="custom-dialog">
+          <!-- 头部 -->
+          <div class="custom-dialog-header">
+            <span class="custom-dialog-title">{{ dialogTitle }}</span>
+            <button class="custom-dialog-close" @click="dialogVisible = false">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+
+          <!-- 表单 -->
+          <el-form ref="formRef" :model="form" class="custom-form">
+            <!-- 连接名称 -->
+            <div class="form-field" :class="{ 'has-value': form.connName, 'has-error': false }">
+              <el-input v-model="form.connName" class="field-input" />
+              <label class="field-label">连接名称</label>
+              <span class="field-hint">如：生产环境 MySQL</span>
+            </div>
+
+            <!-- 数据库类型 -->
+            <div class="form-field" :class="{ 'has-value': form.dbType }">
+              <div class="custom-select" :class="{ 'is-open': dbTypeDropdownOpen }" @click.stop="toggleDbTypeDropdown">
+                <div class="custom-select-trigger">
+                  <span class="custom-select-value">{{ form.dbType ? dbTypeOptions.find(o => o.value === form.dbType)?.label : '' }}</span>
+                  <svg class="custom-select-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+                <div v-if="dbTypeDropdownOpen" class="custom-select-dropdown" @click.stop>
+                  <div
+                    v-for="opt in dbTypeOptions"
+                    :key="opt.value"
+                    class="custom-select-option"
+                    :class="{ 'is-selected': form.dbType === opt.value }"
+                    @click="selectDbType(opt.value)"
+                  >
+                    <span>{{ opt.label }}</span>
+                    <svg v-if="form.dbType === opt.value" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+              <label class="field-label">数据库类型</label>
+            </div>
+
+            <!-- 主机 + 端口 -->
+            <div class="form-row">
+              <div class="form-field" :class="{ 'has-value': form.host }">
+                <el-input v-model="form.host" class="field-input" />
+                <label class="field-label">主机地址</label>
+                <span class="field-hint">如：127.0.0.1</span>
+              </div>
+              <div class="form-field form-field--port" :class="{ 'has-value': form.port }">
+                <el-input v-model.number="form.port" class="field-input" />
+                <label class="field-label">端口</label>
+              </div>
+            </div>
+
+            <!-- 数据库名 -->
+            <div class="form-field" :class="{ 'has-value': form.databaseName }">
+              <el-input v-model="form.databaseName" class="field-input" />
+              <label class="field-label">数据库名</label>
+            </div>
+
+            <!-- 用户名 + 密码 -->
+            <div class="form-row">
+              <div class="form-field" :class="{ 'has-value': form.username }">
+                <el-input v-model="form.username" class="field-input" />
+                <label class="field-label">用户名</label>
+              </div>
+              <div class="form-field" :class="{ 'has-value': form.password }">
+                <el-input v-model="form.password" type="password" show-password class="field-input" />
+                <label class="field-label">{{ dialogMode === 'edit' ? '密码（不填则不修改）' : '密码' }}</label>
+              </div>
+            </div>
+          </el-form>
+
+          <!-- 底部 -->
+          <div class="custom-dialog-footer">
+            <button class="footer-btn btn-test-conn" :disabled="testing" @click="handleTest">
+              <svg v-if="testing" class="spinning" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>
+              <span v-if="!testing">测试连接</span>
+            </button>
+            <div class="footer-right">
+              <button class="footer-btn btn-cancel" @click="dialogVisible = false">取消</button>
+              <button class="footer-btn btn-submit" :disabled="submitting" @click="handleSubmit">
+                <svg v-if="submitting" class="spinning" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>
+                {{ dialogMode === 'add' ? '添加' : '保存' }}
+              </button>
+            </div>
           </div>
         </div>
-      </template>
-    </el-dialog>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -654,54 +729,262 @@ onUnmounted(() => {
   background: var(--color-accent);
 }
 
-/* ── 弹窗 ── */
-.ds-dialog :deep(.el-dialog__header) {
-  padding: 20px 24px 16px;
-  border-bottom: 1px solid var(--color-border);
-  margin: 0;
+/* ── 自定义新增/编辑弹窗 ── */
+.custom-dialog-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9998;
+  animation: fade-in 0.15s ease;
 }
 
-.ds-dialog :deep(.el-dialog__title) {
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.custom-dialog {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  width: 540px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.16), 0 4px 16px rgba(0,0,0,0.08);
+  animation: dialog-in 0.18s ease;
+  overflow: hidden;
+}
+
+.custom-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 18px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.custom-dialog-title {
   font-size: 15px;
   font-weight: 600;
   color: var(--color-text-primary);
 }
 
-.ds-dialog :deep(.el-dialog__body) {
-  padding: 20px 24px;
+.custom-dialog-close {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  transition: background 0.15s, color 0.15s;
 }
-
-.ds-dialog :deep(.el-dialog__footer) {
-  padding: 14px 24px;
-  border-top: 1px solid var(--color-border);
-}
-
-.ds-form :deep(.el-input__wrapper),
-.ds-form :deep(.el-select .el-input__wrapper) {
-  box-shadow: none !important;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+.custom-dialog-close:hover {
   background: var(--color-bg-input);
+  color: var(--color-text-primary);
 }
 
-.ds-form :deep(.el-input__wrapper:hover),
-.ds-form :deep(.el-input__wrapper.is-focus),
-.ds-form :deep(.el-select .el-input__wrapper:hover),
-.ds-form :deep(.el-select .el-input.is-focus .el-input__wrapper) {
+/* ── 浮动 label 表单 ── */
+.custom-form {
+  padding: 20px 24px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 隐藏 Element Plus 表单验证错误提示 */
+.custom-form :deep(.el-form-item__error) {
+  display: none !important;
+}
+
+.custom-dialog :deep(.el-form-item__error) {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.form-field {
+  position: relative;
+  flex: 1;
+  margin-bottom: 10px;
+}
+
+.form-field--port {
+  flex: 0 0 110px;
+}
+
+.field-input :deep(.el-input__wrapper),
+.field-input :deep(.el-input-number .el-input__wrapper) {
+  box-shadow: none !important;
+  border: 1.5px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-bg-input);
+  padding: 22px 12px 8px;
+  height: 52px;
+  transition: border-color 0.15s;
+}
+
+.field-input :deep(.el-input__inner),
+.field-input :deep(.el-input-number .el-input__inner) {
+  font-size: 14px;
+  color: var(--color-text-primary);
+  height: auto;
+  line-height: 1.4;
+}
+
+.field-input :deep(.el-input__wrapper:hover),
+.field-input :deep(.el-input__wrapper.is-focus) {
   border-color: var(--color-accent) !important;
 }
 
-.ds-form :deep(.el-input-number .el-input__wrapper) {
-  box-shadow: none !important;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-input);
+/* 原生 select 样式 */
+.custom-select {
+  position: relative;
+  width: 100%;
+  cursor: pointer;
 }
 
-.dialog-footer {
+.custom-select-trigger {
+  width: 100%;
+  height: 52px;
+  padding: 22px 12px 8px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-bg-input);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  transition: border-color 0.15s;
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.custom-select-trigger:hover,
+.custom-select.is-open .custom-select-trigger {
+  border-color: var(--color-accent);
+}
+
+.custom-select-value {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-select-arrow {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  transition: transform 0.2s;
+}
+
+.custom-select.is-open .custom-select-arrow {
+  transform: rotate(180deg);
+}
+
+.custom-select-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  overflow: hidden;
+  animation: dropdown-in 0.15s ease;
+}
+
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.custom-select-option {
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.custom-select-option:hover {
+  background: var(--color-bg-input);
+}
+
+.custom-select-option.is-selected {
+  color: var(--color-accent);
+  background: var(--color-accent-bg, rgba(217, 119, 6, 0.08));
+}
+
+.custom-select-option svg {
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+
+
+.field-label {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  pointer-events: none;
+  transition: top 0.15s ease, font-size 0.15s ease, color 0.15s ease;
+  transform-origin: left center;
+}
+
+/* 有值或聚焦时 label 上浮 */
+.form-field.has-value .field-label,
+.form-field:focus-within .field-label {
+  top: 10px;
+  transform: translateY(0);
+  font-size: 11px;
+  color: var(--color-accent);
+}
+
+.field-hint {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: var(--color-text-disabled);
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.form-field.has-value .field-hint,
+.form-field:focus-within .field-hint {
+  opacity: 0;
+}
+
+/* ── 弹窗底部 ── */
+.custom-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-top: 1px solid var(--color-border);
 }
 
 .footer-right {
@@ -709,14 +992,49 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-.btn-test {
-  border-radius: var(--radius-md);
-  color: var(--color-accent);
-  border-color: var(--color-accent);
+.footer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 18px;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
 }
 
-.btn-test:hover {
-  background: var(--color-accent-bg);
+.footer-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-test-conn {
+  border: 1.5px solid var(--color-accent);
+  color: var(--color-accent);
+  background: transparent;
+}
+.btn-test-conn:hover:not(:disabled) {
+  background: var(--color-accent-bg, rgba(217,119,6,0.08));
+}
+
+.btn-cancel {
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  background: transparent;
+}
+.btn-cancel:hover {
+  background: var(--color-bg-input);
+  color: var(--color-text-primary);
+}
+
+.btn-submit {
+  border: none;
+  background: var(--color-accent);
+  color: white;
+}
+.btn-submit:hover:not(:disabled) {
+  opacity: 0.88;
 }
 
 .test-result {
@@ -727,6 +1045,18 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+  animation: slide-in 0.2s ease;
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .test-ok {
@@ -811,4 +1141,9 @@ onUnmounted(() => {
   transition: opacity 0.15s;
 }
 .confirm-btn-ok:hover { opacity: 0.85; }
+
+/* 全局隐藏 Element Plus 表单错误提示 */
+:global(.el-form-item__error) {
+  display: none !important;
+}
 </style>

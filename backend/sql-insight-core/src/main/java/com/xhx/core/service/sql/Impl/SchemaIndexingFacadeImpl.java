@@ -1,6 +1,7 @@
 package com.xhx.core.service.sql.Impl;
 
 import com.xhx.ai.service.SchemaIndexingService;
+import com.xhx.common.exception.LoadingException;
 import com.xhx.common.model.TableMetadata;
 import com.xhx.core.extractor.MetadataExtractorRouter;
 import com.xhx.core.service.management.DataSourcePasswordCipher;
@@ -112,7 +113,7 @@ public class SchemaIndexingFacadeImpl implements SchemaIndexingFacade {
         try (Connection conn = ds.getConnection()) {
             return metadataExtractorRouter.extract(dsConfig.getDbType(), conn, tableNames);
         } catch (SQLException e) {
-            throw new RuntimeException(
+            throw new LoadingException(
                     "连接数据源 [" + dsConfig.getConnName() + "] 失败: " + e.getMessage(), e);
         }
     }

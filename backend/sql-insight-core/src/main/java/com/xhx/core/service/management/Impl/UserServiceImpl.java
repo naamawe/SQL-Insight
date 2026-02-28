@@ -77,6 +77,10 @@ public class UserServiceImpl implements UserService {
             UserVO vo = new UserVO();
             BeanUtils.copyProperties(user, vo);
             vo.setRoleName(roleMap.getOrDefault(user.getRoleId(), "未知角色"));
+            // 去掉 systemPermission 的 ROLE_ 前缀
+            if (user.getSystemPermission() != null && user.getSystemPermission().startsWith("ROLE_")) {
+                vo.setSystemPermission(user.getSystemPermission().substring(5));
+            }
             return vo;
         }).collect(Collectors.toList());
 
@@ -100,6 +104,10 @@ public class UserServiceImpl implements UserService {
         Role role = roleMapper.selectById(user.getRoleId());
         if (role != null) {
             vo.setRoleName(role.getRoleName());
+        }
+        // 去掉 systemPermission 的 ROLE_ 前缀
+        if (user.getSystemPermission() != null && user.getSystemPermission().startsWith("ROLE_")) {
+            vo.setSystemPermission(user.getSystemPermission().substring(5));
         }
         return vo;
     }
@@ -260,13 +268,18 @@ public class UserServiceImpl implements UserService {
             throw new ServiceException("用户不存在");
         }
 
-        // 校验权限值合法性
-        if (!SystemPermissionConstants.SUPER_ADMIN.equals(systemPermission)
-                && !SystemPermissionConstants.ADMIN.equals(systemPermission)
-                && !SystemPermissionConstants.USER.equals(systemPermission)) {
-            throw new ServiceException("非法的系统权限值");
+        // 如果传入的权限值有 ROLE_ 前缀，去掉前缀
+        String normalizedPermission = systemPermission;
+        if (systemPermission.startsWith("ROLE_")) {
+            normalizedPermission = systemPermission.substring(5);
         }
 
+        // 校验权限值合法性（去掉前缀后的值）
+        if (!"SUPER_ADMIN".equals(normalizedPermission)
+                && !"ADMIN".equals(normalizedPermission)
+                && !"USER".equals(normalizedPermission)) {
+            throw new ServiceException("非法的系统权限值");
+        }
 
         // 禁止授予 SUPER_ADMIN 权限
         if (SystemPermissionConstants.SUPER_ADMIN.equals(systemPermission)) {
@@ -289,14 +302,14 @@ public class UserServiceImpl implements UserService {
         }
 
         String oldPermission = targetUser.getSystemPermission();
-        targetUser.setSystemPermission(systemPermission);
+        targetUser.setSystemPermission(normalizedPermission);
         userMapper.updateById(targetUser);
 
         // 强制下线
         kickOutUser(userId);
 
         log.info("用户 {} 的系统权限已由 {} 变更为 {}",
-                targetUser.getUserName(), oldPermission, systemPermission);
+                targetUser.getUserName(), oldPermission, normalizedPermission);
     }
 
     // 删除所有散落的 redisTemplate.delete() 调用，统一走 CacheService

@@ -5,6 +5,7 @@ export interface UserSaveDTO {
   userName: string
   password: string
   roleId: number
+  systemPermission: string
 }
 
 export interface UserUpdateDTO {
@@ -16,6 +17,7 @@ export interface UserUpdateDTO {
 export interface UserPasswordUpdateDTO {
   oldPassword: string
   newPassword: string
+  confirmPassword: string
 }
 
 export const userApi = {

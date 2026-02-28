@@ -1,5 +1,6 @@
 package com.xhx.ai.service;
 
+import com.xhx.common.exception.LoadingException;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
@@ -82,7 +83,7 @@ public class PromptBuilder {
             ClassPathResource resource = new ClassPathResource(path);
             return resource.getContentAsString(StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new RuntimeException("无法加载 Prompt 资源文件: " + path, e);
+            throw new LoadingException("无法加载 Prompt 资源文件: " + path, e);
         }
     }
 }

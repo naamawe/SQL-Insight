@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { ref } from 'vue'
 import { chatApi } from '@/api/chat'
 import type { ChatSession } from '@/types'
 
@@ -13,7 +14,24 @@ export const useChatStore = defineStore('chat', () => {
     loading.value = true
     try {
       const res = await chatApi.getSessions(1, 50)
-      sessions.value = res.records
+      console.log('loadSessions 返回数据:', res)
+      console.log('res 的类型:', typeof res)
+      console.log('res 是否为数组:', Array.isArray(res))
+
+      // 兼容两种返回格式：直接数组 或 PageResult 对象
+      if (Array.isArray(res)) {
+        sessions.value = res
+      } else if (res && res.records) {
+        sessions.value = res.records
+      } else {
+        console.warn('未知的返回格式:', res)
+        sessions.value = []
+      }
+
+      console.log('最终 sessions.value:', sessions.value)
+    } catch (e) {
+      console.error('加载会话列表失败:', e)
+      sessions.value = []
     } finally {
       loading.value = false
     }

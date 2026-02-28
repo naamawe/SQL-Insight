@@ -73,7 +73,7 @@ async function handleAdd() {
   try {
     await roleApi.save(addForm)
     addDialogVisible.value = false
-    ElMessage.success('角色创建成功')
+    ElMessage.success({ message: '角色创建成功', duration: 2000 })
     fetchList()
   } catch (e: any) {
     setAddError(e.message || '创建失败，请重试')
@@ -108,7 +108,7 @@ async function handleEdit() {
   try {
     await roleApi.update(editForm)
     editDialogVisible.value = false
-    ElMessage.success('角色已更新')
+    ElMessage.success({ message: '角色已更新', duration: 2000 })
     fetchList()
   } catch (e: any) {
     setEditError(e.message || '保存失败，请重试')
@@ -131,7 +131,7 @@ async function confirmDelete() {
   showDeleteDialog.value = false
   try {
     await roleApi.remove(roleToDelete.value.id)
-    ElMessage.success('角色已删除')
+    ElMessage.success({ message: '角色已删除', duration: 2000 })
     roleToDelete.value = null
     fetchList()
   } catch {

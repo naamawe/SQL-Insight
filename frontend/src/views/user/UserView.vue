@@ -57,7 +57,7 @@ function handlePageChange(page: number) {
 const addDialogVisible = ref(false)
 const addSubmitting = ref(false)
 const addError = ref('')
-const addForm = reactive<UserSaveDTO>({ userName: '', password: '', roleId: 0 })
+const addForm = reactive<UserSaveDTO>({ userName: '', password: '', roleId: 0, systemPermission: 'USER' })
 let addErrorTimer: ReturnType<typeof setTimeout> | null = null
 
 const roleDropdownOpen = ref(false)
@@ -82,7 +82,7 @@ function setAddError(msg: string) {
 }
 
 function openAdd() {
-  Object.assign(addForm, { userName: '', password: '', roleId: 0 })
+  Object.assign(addForm, { userName: '', password: '', roleId: 0, systemPermission: 'USER' })
   addError.value = ''
   roleDropdownOpen.value = false
   addRoleSearch.value = ''
@@ -95,12 +95,13 @@ async function handleAdd() {
   if (!addForm.password) { setAddError('请输入密码'); return }
   if (addForm.password.length < 6) { setAddError('密码至少 6 位'); return }
   if (!addForm.roleId) { setAddError('请选择角色'); return }
+  if (!addForm.systemPermission) { setAddError('请选择系统权限'); return }
   addError.value = ''
   addSubmitting.value = true
   try {
     await userApi.save(addForm)
     addDialogVisible.value = false
-    ElMessage.success('用户创建成功')
+    ElMessage.success({ message: '用户创建成功', duration: 2000 })
     fetchList()
   } catch {
     // 错误已由 http 拦截器统一展示
@@ -136,7 +137,7 @@ async function handleEdit() {
   try {
     await userApi.update(editForm)
     editDialogVisible.value = false
-    ElMessage.success('用户信息已更新')
+    ElMessage.success({ message: '用户信息已更新', duration: 2000 })
     fetchList()
   } catch {
     // 错误已由 http 拦截器统一展示
@@ -178,7 +179,7 @@ async function handleDelete(row: UserVO) {
   if (!ok) return
   try {
     await userApi.remove(row.id)
-    ElMessage.success('用户已删除')
+    ElMessage.success({ message: '用户已删除', duration: 2000 })
     fetchList()
   } catch {
     // 错误已由 http 拦截器统一展示
@@ -191,7 +192,7 @@ async function handleResetPassword(row: UserVO) {
   if (!ok) return
   try {
     await userApi.resetPassword(row.id)
-    ElMessage.success('密码已重置为默认密码')
+    ElMessage.success({ message: '密码已重置为默认密码', duration: 2000 })
   } catch {
     // 错误已由 http 拦截器统一展示
   }
@@ -233,7 +234,7 @@ async function handlePermUpdate() {
   try {
     await userApi.updateSystemPermission(permUserId.value, selectedPerm.value)
     permDialogVisible.value = false
-    ElMessage.success('系统权限已更新')
+    ElMessage.success({ message: '系统权限已更新', duration: 2000 })
     fetchList()
   } catch {
     // 错误已由 http 拦截器统一展示
@@ -433,6 +434,27 @@ onUnmounted(() => {
                   </div>
                 </div>
                 <div v-if="roleDropdownOpen" class="role-dropdown-backdrop" @click="roleDropdownOpen = false" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">系统权限 <span class="required">*</span></label>
+              <div class="permission-options">
+                <button
+                  type="button"
+                  class="permission-btn"
+                  :class="{ active: addForm.systemPermission === 'USER' }"
+                  @click="addForm.systemPermission = 'USER'; addError = ''"
+                >
+                  普通用户
+                </button>
+                <button
+                  type="button"
+                  class="permission-btn"
+                  :class="{ active: addForm.systemPermission === 'ADMIN' }"
+                  @click="addForm.systemPermission = 'ADMIN'; addError = ''"
+                >
+                  管理员
+                </button>
               </div>
             </div>
             <div class="modal-error-wrap">
@@ -1615,4 +1637,34 @@ onUnmounted(() => {
 }
 .edit-btn-ok:hover:not(:disabled) { opacity: 0.85; }
 .edit-btn-ok:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* 系统权限选择按钮 */
+.permission-options {
+  display: flex;
+  gap: 8px;
+}
+
+.permission-btn {
+  flex: 1;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.permission-btn:hover {
+  border-color: var(--color-accent);
+  background: rgba(217, 119, 6, 0.05);
+}
+
+.permission-btn.active {
+  border-color: var(--color-accent);
+  background: rgba(217, 119, 6, 0.1);
+  color: var(--color-accent);
+  font-weight: 600;
+}
 </style>

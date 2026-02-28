@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -220,8 +221,7 @@ public class CacheServiceImpl implements CacheService {
         if (json == null) {
             return null;
         }
-        return JSON.parseObject(json, new TypeReference<>() {}
-        );
+        return JSON.parseObject(json, new TypeReference<>() {});
     }
 
     @Override
@@ -269,7 +269,6 @@ public class CacheServiceImpl implements CacheService {
 
     @Override
     public void putQueryResult(Long recordId, List<Map<String, Object>> data) {
-        // 只缓存前 100 行，防止大结果集撑爆 Redis
         List<Map<String, Object>> sample = data.stream()
                 .limit(SecurityConstants.QUERY_RESULT_MAX_ROWS)
                 .toList();
@@ -289,40 +288,35 @@ public class CacheServiceImpl implements CacheService {
         if (json == null) {
             return null;
         }
-        return JSON.parseObject(json, new TypeReference<>() {
-        });
+        return JSON.parseObject(json, new TypeReference<>() {});
     }
 
     @Override
     public Map<Long, List<Map<String, Object>>> batchGetQueryResults(List<Long> recordIds) {
-        if (recordIds == null || recordIds.isEmpty()) {
+        if (CollectionUtils.isEmpty(recordIds)) {
             return Collections.emptyMap();
         }
 
-        // 构建所有的key
         List<String> keys = recordIds.stream()
                 .map(id -> SecurityConstants.QUERY_RESULT_KEY + id)
                 .toList();
 
-        // 使用 multiGet 批量获取，比Pipeline更简单高效
         List<String> jsonList = redisTemplate.opsForValue().multiGet(keys);
 
-        // 组装结果Map
         Map<Long, List<Map<String, Object>>> resultMap = new HashMap<>();
         for (int i = 0; i < recordIds.size(); i++) {
             Long recordId = recordIds.get(i);
             String json = jsonList != null ? jsonList.get(i) : null;
-            
             if (json != null) {
-                List<Map<String, Object>> data = JSON.parseObject(json, new TypeReference<>() {});
-                resultMap.put(recordId, data);
+                resultMap.put(recordId, JSON.parseObject(json, new TypeReference<>() {}));
             } else {
                 resultMap.put(recordId, null);
             }
         }
 
-        log.debug("批量获取查询结果缓存，总数: {}, 命中: {}", 
-                recordIds.size(), resultMap.values().stream().filter(v -> v != null).count());
+        log.debug("批量获取查询结果缓存，总数: {}, 命中: {}",
+                recordIds.size(),
+                resultMap.values().stream().filter(Objects::nonNull).count());
 
         return resultMap;
     }
@@ -331,6 +325,18 @@ public class CacheServiceImpl implements CacheService {
     public boolean hasQueryResult(Long recordId) {
         return Boolean.TRUE.equals(
                 redisTemplate.hasKey(SecurityConstants.QUERY_RESULT_KEY + recordId));
+    }
+
+    @Override
+    public void evictQueryResults(List<Long> recordIds) {
+        if (CollectionUtils.isEmpty(recordIds)) {
+            return;
+        }
+        List<String> keys = recordIds.stream()
+                .map(id -> SecurityConstants.QUERY_RESULT_KEY + id)
+                .toList();
+        Long deleted = redisTemplate.delete(keys);
+        log.info("批量删除查询结果缓存，共 {} 个 key，实际删除 {} 个", keys.size(), deleted);
     }
 
     // ==================== 私有工具 ====================

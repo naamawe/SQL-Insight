@@ -4,6 +4,7 @@ import com.alibaba.dashscope.embeddings.TextEmbedding;
 import com.alibaba.dashscope.embeddings.TextEmbeddingParam;
 import com.alibaba.dashscope.embeddings.TextEmbeddingResult;
 import com.xhx.ai.config.AliyunAiProperties;
+import com.xhx.common.exception.ServiceException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -39,7 +40,7 @@ public class AliyunEmbeddingService {
             TextEmbeddingResult result = embedding.call(param);
 
             if (result.getOutput() == null || result.getOutput().getEmbeddings().isEmpty()) {
-                throw new RuntimeException("AI Embedding 返回结果为空");
+                throw new ServiceException("AI Embedding 返回结果为空");
             }
 
             return result.getOutput().getEmbeddings().get(0).getEmbedding()

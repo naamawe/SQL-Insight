@@ -3,19 +3,26 @@ package com.xhx.core.service.sql.Impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xhx.common.exception.NotExistException;
+import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.sql.ChatSessionService;
 import com.xhx.dal.entity.ChatMessageEntity;
 import com.xhx.dal.entity.ChatRecord;
 import com.xhx.dal.entity.ChatSession;
+import com.xhx.dal.entity.DataSource;
 import com.xhx.dal.mapper.ChatMessageMapper;
 import com.xhx.dal.mapper.ChatRecordMapper;
 import com.xhx.dal.mapper.ChatSessionMapper;
+import com.xhx.dal.mapper.DataSourceMapper;
+import com.xhx.core.model.vo.ChatSessionVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * @author master
@@ -28,7 +35,8 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     private final ChatSessionMapper chatSessionMapper;
     private final ChatMessageMapper chatMessageMapper;
     private final ChatRecordMapper  chatRecordMapper;
-    private final org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
+    private final CacheService      cacheService;
+    private final DataSourceMapper  dataSourceMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -44,13 +52,37 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     }
 
     @Override
-    public Page<ChatSession> getUserSessions(Long userId, int current, int size) {
-        return chatSessionMapper.selectPage(
+    public Page<ChatSessionVO> getUserSessions(Long userId, int current, int size) {
+        // 查询会话列表
+        Page<ChatSession> sessionPage = chatSessionMapper.selectPage(
                 new Page<>(current, size),
                 new LambdaQueryWrapper<ChatSession>()
                         .eq(ChatSession::getUserId, userId)
                         .orderByDesc(ChatSession::getCreateTime)
         );
+
+        // 获取所有数据源ID
+        List<Long> dataSourceIds = sessionPage.getRecords().stream()
+                .map(ChatSession::getDataSourceId)
+                .distinct()
+                .toList();
+
+        // 批量查询数据源信息
+        Map<Long, String> dataSourceNameMap = dataSourceIds.isEmpty() ? Map.of() :
+                dataSourceMapper.selectBatchIds(dataSourceIds).stream()
+                        .collect(Collectors.toMap(DataSource::getId, DataSource::getConnName));
+
+        // 转换为 VO
+        Page<ChatSessionVO> voPage = new Page<>(sessionPage.getCurrent(), sessionPage.getSize(), sessionPage.getTotal());
+        List<ChatSessionVO> voList = sessionPage.getRecords().stream().map(session -> {
+            ChatSessionVO vo = new ChatSessionVO();
+            BeanUtils.copyProperties(session, vo);
+            vo.setDataSourceName(dataSourceNameMap.getOrDefault(session.getDataSourceId(), "未知数据源"));
+            return vo;
+        }).toList();
+        voPage.setRecords(voList);
+
+        return voPage;
     }
 
     @Override
@@ -81,7 +113,6 @@ public class ChatSessionServiceImpl implements ChatSessionService {
         // 防止越权
         getSessionDetail(userId, sessionId);
 
-        // 查询要删除的记录ID列表，用于清理缓存
         List<Long> recordIds = chatRecordMapper.selectList(
                 new LambdaQueryWrapper<ChatRecord>()
                         .select(ChatRecord::getId)
@@ -95,17 +126,11 @@ public class ChatSessionServiceImpl implements ChatSessionService {
                 .eq(ChatRecord::getSessionId, sessionId));
 
         chatSessionMapper.deleteById(sessionId);
-        
-        // 清理Redis缓存
-        if (!recordIds.isEmpty()) {
-            List<String> cacheKeys = recordIds.stream()
-                    .map(id -> com.xhx.common.constant.SecurityConstants.QUERY_RESULT_KEY + id)
-                    .toList();
-            redisTemplate.delete(cacheKeys);
-            log.info("==> 会话 {} 已删除，清理了 {} 条记录的缓存", sessionId, recordIds.size());
-        } else {
-            log.info("==> 会话 {} 已删除", sessionId);
-        }
+
+        cacheService.evictQueryResults(recordIds);
+
+        log.info("==> 会话 {} 已删除，清理了 {} 条记录的查询结果缓存",
+                sessionId, recordIds.size());
     }
 
     @Override
@@ -115,7 +140,7 @@ public class ChatSessionServiceImpl implements ChatSessionService {
             return;
         }
 
-        // 防止越权
+        // 防止越权，只处理属于当前用户的会话
         List<Long> ownedSessionIds = chatSessionMapper.selectList(
                 new LambdaQueryWrapper<ChatSession>()
                         .select(ChatSession::getId)
@@ -127,7 +152,6 @@ public class ChatSessionServiceImpl implements ChatSessionService {
             return;
         }
 
-        // 查询要删除的记录ID列表，用于清理缓存
         List<Long> recordIds = chatRecordMapper.selectList(
                 new LambdaQueryWrapper<ChatRecord>()
                         .select(ChatRecord::getId)
@@ -144,16 +168,9 @@ public class ChatSessionServiceImpl implements ChatSessionService {
         chatRecordMapper.delete(new LambdaQueryWrapper<ChatRecord>()
                 .in(ChatRecord::getSessionId, ownedSessionIds));
 
-        // 清理Redis缓存
-        if (!recordIds.isEmpty()) {
-            List<String> cacheKeys = recordIds.stream()
-                    .map(id -> com.xhx.common.constant.SecurityConstants.QUERY_RESULT_KEY + id)
-                    .toList();
-            redisTemplate.delete(cacheKeys);
-            log.info("==> 批量删除会话成功，userId: {}，共删除 {} 个会话，清理了 {} 条记录的缓存", 
-                    userId, ownedSessionIds.size(), recordIds.size());
-        } else {
-            log.info("==> 批量删除会话成功，userId: {}，共删除 {} 个", userId, ownedSessionIds.size());
-        }
+        cacheService.evictQueryResults(recordIds);
+
+        log.info("==> 批量删除会话成功，userId: {}，共删除 {} 个会话，清理了 {} 条记录的查询结果缓存",
+                userId, ownedSessionIds.size(), recordIds.size());
     }
 }

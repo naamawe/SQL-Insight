@@ -1,6 +1,7 @@
 package com.xhx.web.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.xhx.ai.service.NlFeedbackGenerator;
 import com.xhx.common.context.UserContext;
 import com.xhx.common.result.Result;
 import com.xhx.core.model.dto.SqlChatRequest;
@@ -8,6 +9,7 @@ import com.xhx.ai.listener.ChatStreamListener;
 import com.xhx.core.model.vo.ChatRecordVO;
 import com.xhx.core.service.sql.*;
 import com.xhx.dal.entity.ChatSession;
+import com.xhx.core.model.vo.ChatSessionVO;
 import com.xhx.web.adapter.SseChatAdapter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +19,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -37,6 +40,7 @@ public class SqlChatController {
     private final SqlChatApiService   sqlChatApiService;
     private final ChatRecordService   chatRecordService;
     private final SqlSecurityService  sqlSecurityService;
+    private final NlFeedbackGenerator nlFeedbackGenerator;
 
     /**
      * SSE 流式 AI 对话
@@ -59,7 +63,7 @@ public class SqlChatController {
     // ==================== 会话管理 ====================
 
     @GetMapping("/sessions")
-    public Result<Page<ChatSession>> getSessions(
+    public Result<Page<ChatSessionVO>> getSessions(
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "10") int size) {
         // 限制单次最多查询100条，防止恶意请求
@@ -141,38 +145,53 @@ public class SqlChatController {
 
     /**
      * 重新执行历史 SQL（缓存过期后使用）
+     * 返回包含 data、summary、total 的完整响应
      */
     @PostMapping("/records/{recordId}/rerun")
-    public Result<List<Map<String, Object>>> rerunRecord(@PathVariable Long recordId) {
+    public Result<Map<String, Object>> rerunRecord(@PathVariable Long recordId) {
         Long userId = UserContext.getUserId();
-        
+
         log.info("[历史记录重执行] 开始执行, userId: {}, recordId: {}", userId, recordId);
 
         ChatRecordVO record = chatRecordService.getById(recordId, userId);
-        
+
         // 如果缓存仍然有效，直接返回，避免不必要的数据库查询
         if (!record.getResultExpired() && record.getResultData() != null) {
             log.info("[历史记录重执行] 缓存仍然有效，直接返回, userId: {}, recordId: {}", userId, recordId);
-            return Result.success(record.getResultData());
+            Map<String, Object> response = new HashMap<>();
+            response.put("data", record.getResultData());
+            response.put("summary", record.getSummary());
+            response.put("total", record.getRowTotal());
+            return Result.success(response);
         }
-        
+
         Long dataSourceId = chatSessionService.getSessionDetail(userId, record.getSessionId()).getDataSourceId();
-        
+
         // 重新校验 SQL 安全性，防止用户权限变更后越权访问
         try {
             sqlSecurityService.validate(record.getSqlText(), userId, dataSourceId);
         } catch (Exception e) {
-            log.warn("[历史记录重执行失败] 安全校验未通过, userId: {}, recordId: {}, sql: {}, reason: {}", 
+            log.warn("[历史记录重执行失败] 安全校验未通过, userId: {}, recordId: {}, sql: {}, reason: {}",
                     userId, recordId, record.getSqlText(), e.getMessage());
             throw e;
         }
 
         List<Map<String, Object>> data = sqlExecutorService.execute(dataSourceId, record.getSqlText());
-        
-        log.info("[历史记录重执行成功] userId: {}, recordId: {}, 原始行数: {}, 当前行数: {}", 
+
+        log.info("[历史记录重执行成功] userId: {}, recordId: {}, 原始行数: {}, 当前行数: {}",
                 userId, recordId, record.getRowTotal(), data.size());
 
-        chatRecordService.cacheResult(recordId, data);
-        return Result.success(data);
+        // 重新生成 AI 摘要
+        String newSummary = nlFeedbackGenerator.generate(record.getQuestion(), record.getSqlText(), data);
+
+        // 缓存结果并更新摘要和行数
+        chatRecordService.cacheResult(recordId, data, newSummary);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("data", data);
+        response.put("summary", newSummary);
+        response.put("total", data.size());
+
+        return Result.success(response);
     }
 }

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
-import { userAuthApi, rolePermissionApi } from '@/api/permission'
+import { rolePermissionApi } from '@/api/permission'
 import { dataSourceApi } from '@/api/datasource'
 import { userApi } from '@/api/user'
 import type { DataSourceVO } from '@/types'
@@ -56,30 +57,35 @@ const filteredActiveTables = computed(() => {
 const showPwdForm = ref(false)
 const pwdSubmitting = ref(false)
 const pwdSuccess = ref(false)
-const pwdError = ref('')
 const pwdForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const showOldPwd = ref(false)
+const showNewPwd = ref(false)
+const showConfirmPwd = ref(false)
 
 function openPwdForm() {
   pwdForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
-  pwdError.value = ''
+  showOldPwd.value = false
+  showNewPwd.value = false
+  showConfirmPwd.value = false
   pwdSuccess.value = false
   showPwdForm.value = true
 }
 
 async function handleChangePassword() {
   const { oldPassword, newPassword, confirmPassword } = pwdForm.value
-  if (!oldPassword || !newPassword || !confirmPassword) { pwdError.value = '请填写所有字段'; return }
-  if (newPassword.length < 6) { pwdError.value = '新密码至少 6 位'; return }
-  if (newPassword !== confirmPassword) { pwdError.value = '两次密码不一致'; return }
-  pwdError.value = ''
+  if (!oldPassword || !newPassword || !confirmPassword) { ElMessage.warning('请填写所有字段'); return }
+  if (newPassword.length < 8) { ElMessage.warning('新密码至少 8 位'); return }
+  if (!/^(?=.*[A-Za-z])(?=.*\d).+$/.test(newPassword)) { ElMessage.warning('新密码必须同时包含字母和数字'); return }
+  if (newPassword !== confirmPassword) { ElMessage.warning('两次密码不一致'); return }
   pwdSubmitting.value = true
   try {
-    await userApi.updatePassword({ oldPassword, newPassword })
+    await userApi.updatePassword({ oldPassword, newPassword, confirmPassword })
     showPwdForm.value = false
     pwdSuccess.value = true
+    ElMessage.success('密码修改成功')
     setTimeout(() => { pwdSuccess.value = false }, 3000)
   } catch (e: any) {
-    pwdError.value = e?.response?.data?.message ?? '修改失败，请检查旧密码'
+    ElMessage.error(e?.response?.data?.message ?? '修改失败，请检查旧密码')
   } finally {
     pwdSubmitting.value = false
   }
@@ -88,15 +94,12 @@ async function handleChangePassword() {
 onMounted(async () => {
   loading.value = true
   try {
-    const [myIds, allDs, me] = await Promise.all([
-      userAuthApi.getMyAuthorizedIds(),
-      dataSourceApi.list(),
-      userApi.me(),
+    const [myDs, myTableMap] = await Promise.all([
+      dataSourceApi.myList(),
+      rolePermissionApi.mySummary(),
     ]) as any[]
-    dsList.value = (allDs as DataSourceVO[]).filter((ds: DataSourceVO) => (myIds as number[]).includes(ds.id))
-    if (me?.roleId) {
-      tableMap.value = (await rolePermissionApi.getSummary(me.roleId) as any) ?? {}
-    }
+    dsList.value = myDs
+    tableMap.value = myTableMap ?? {}
   } finally {
     loading.value = false
   }
@@ -155,17 +158,34 @@ onMounted(async () => {
           <div v-else class="pwd-form">
             <div class="pwd-field">
               <label>当前密码</label>
-              <input v-model="pwdForm.oldPassword" type="password" placeholder="请输入当前密码" class="pwd-input" />
+              <div class="pwd-input-wrap">
+                <input v-model="pwdForm.oldPassword" :type="showOldPwd ? 'text' : 'password'" placeholder="请输入当前密码" class="pwd-input" />
+                <button type="button" class="pwd-eye" @click="showOldPwd = !showOldPwd">
+                  <svg v-if="!showOldPwd" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                </button>
+              </div>
             </div>
             <div class="pwd-field">
               <label>新密码</label>
-              <input v-model="pwdForm.newPassword" type="password" placeholder="至少 6 位" class="pwd-input" />
+              <div class="pwd-input-wrap">
+                <input v-model="pwdForm.newPassword" :type="showNewPwd ? 'text' : 'password'" placeholder="至少 8 位，包含字母和数字" class="pwd-input" />
+                <button type="button" class="pwd-eye" @click="showNewPwd = !showNewPwd">
+                  <svg v-if="!showNewPwd" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                </button>
+              </div>
             </div>
             <div class="pwd-field">
               <label>确认新密码</label>
-              <input v-model="pwdForm.confirmPassword" type="password" placeholder="再次输入新密码" class="pwd-input" />
+              <div class="pwd-input-wrap">
+                <input v-model="pwdForm.confirmPassword" :type="showConfirmPwd ? 'text' : 'password'" placeholder="再次输入新密码" class="pwd-input" />
+                <button type="button" class="pwd-eye" @click="showConfirmPwd = !showConfirmPwd">
+                  <svg v-if="!showConfirmPwd" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                </button>
+              </div>
             </div>
-            <div v-if="pwdError" class="pwd-error">{{ pwdError }}</div>
             <div class="pwd-actions">
               <button class="pwd-cancel" @click="showPwdForm = false">取消</button>
               <button class="pwd-submit" :disabled="pwdSubmitting" @click="handleChangePassword">
@@ -517,18 +537,41 @@ onMounted(async () => {
 .pwd-field label { font-size: 12px; color: var(--color-text-secondary); }
 
 .pwd-input {
+  flex: 1;
   padding: 7px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-input);
+  border: none;
+  background: transparent;
   color: var(--color-text-primary);
   font-size: 13px;
   outline: none;
+  min-width: 0;
+}
+
+.pwd-input-wrap {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-input);
   transition: border-color 0.2s;
 }
-.pwd-input:focus { border-color: var(--color-accent); }
+.pwd-input-wrap:focus-within { border-color: var(--color-accent); }
 
-.pwd-error { font-size: 12px; color: var(--color-error); }
+.pwd-eye {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-disabled);
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  transition: color 0.15s;
+}
+.pwd-eye:hover { color: var(--color-text-secondary); }
 
 .pwd-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 

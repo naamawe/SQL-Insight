@@ -1,5 +1,6 @@
 package com.xhx.core.service.sql.Impl;
 
+import com.xhx.common.exception.ServiceException;
 import com.xhx.common.model.TableMetadata;
 import com.xhx.core.extractor.MetadataExtractorRouter;
 import com.xhx.core.service.cache.CacheService;
@@ -59,7 +60,7 @@ public class SchemaCollectorServiceImpl implements SchemaCollectorService {
             return metadata;
         } catch (SQLException e) {
             log.error("获取数据源 {} 的连接失败", dsConfig.getConnName(), e);
-            throw new RuntimeException("数据库连接失败，请检查配置信息: " + e.getMessage());
+            throw new ServiceException("数据库连接失败，请检查配置信息: " + e.getMessage());
         }
     }
 

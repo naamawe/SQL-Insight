@@ -20,11 +20,13 @@ public interface ChatRecordService {
 
     /**
      * 将查询结果缓存到 Redis（最多 100 行，TTL 24 小时）
+     * 同时更新数据库中的 summary 和 rowTotal
      *
      * @param recordId 对话记录 ID
      * @param data     完整查询结果
+     * @param summary  AI 生成的摘要（可选，为 null 时不更新）
      */
-    void cacheResult(Long recordId, List<Map<String, Object>> data);
+    void cacheResult(Long recordId, List<Map<String, Object>> data, String summary);
 
     /**
      * 查询某个会话下的所有对话记录，附带 Redis 结果缓存状态

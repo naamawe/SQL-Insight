@@ -45,11 +45,21 @@ const isChat = computed(() => route.path === '/chat')
 
 // 始终加载会话列表
 watch(isChat, (val) => {
-  if (val) chatStore.loadSessions()
+  if (val) {
+    console.log('进入 chat 页面，加载会话列表')
+    chatStore.loadSessions()
+  }
 }, { immediate: true })
 
 // 非 chat 页面也加载一次会话列表（用于侧边栏显示）
+console.log('LayoutView 初始化，加载会话列表')
 chatStore.loadSessions()
+
+// 监听 sessions 变化
+watch(() => chatStore.sessions, (newSessions) => {
+  console.log('会话列表更新:', newSessions)
+  console.log('会话数量:', newSessions.length)
+}, { immediate: true, deep: true })
 
 function handleDeleteSession(session: any, e: Event) {
   e.stopPropagation()
@@ -89,39 +99,37 @@ async function confirmLogout() {
     <aside class="sidebar" :class="{ collapsed }">
       <!-- Logo -->
       <div class="sidebar-logo">
-        <!-- 收起状态：logo 图标本身作为展开按钮，hover 时显示箭头 -->
-        <button v-if="collapsed" class="logo-collapse-btn" title="展开" @click="collapsed = false">
-          <svg class="logo-icon" width="28" height="28" viewBox="0 0 36 36" fill="none">
+        <!-- logo 图标：收起时 hover 显示展开箭头，展开时 hover 显示提示 -->
+        <div class="logo-icon-wrap"
+          :data-tooltip="collapsed ? '打开侧栏' : ''"
+          @click="collapsed ? (collapsed = false) : handleNewChat()">
+          <svg class="logo-svg logo-svg--default" width="28" height="28" viewBox="0 0 36 36" fill="none">
             <rect width="36" height="36" rx="10" fill="#D97706" />
             <path d="M10 13h16M10 18h10M10 23h13" stroke="white" stroke-width="2.5" stroke-linecap="round" />
           </svg>
-          <svg class="expand-icon" width="28" height="28" viewBox="0 0 36 36" fill="none">
+          <svg class="logo-svg logo-svg--expand" width="28" height="28" viewBox="0 0 36 36" fill="none">
             <rect width="36" height="36" rx="10" fill="#D97706" />
             <polyline points="13 24 19 18 13 12" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-        </button>
-        <!-- 展开状态：正常显示 logo + 文字 + 收起按钮 -->
-        <template v-else>
-          <svg width="28" height="28" viewBox="0 0 36 36" fill="none" style="flex-shrink:0">
-            <rect width="36" height="36" rx="10" fill="#D97706" />
-            <path d="M10 13h16M10 18h10M10 23h13" stroke="white" stroke-width="2.5" stroke-linecap="round" />
+        </div>
+        <!-- 展开时显示的文字和收起按钮 -->
+        <span class="logo-text" @click="handleNewChat">SQL Insight</span>
+        <button class="collapse-btn" @click="collapsed = true" title="收起">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
           </svg>
-          <span class="logo-text">SQL Insight</span>
-          <button class="collapse-btn" title="收起" @click="collapsed = true">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="15 18 9 12 15 6"/>
-            </svg>
-          </button>
-        </template>
+        </button>
       </div>
 
       <!-- 新建对话按钮 -->
       <div class="new-chat-wrap">
-        <button class="new-chat-btn" @click="handleNewChat" :title="collapsed ? '新建对话' : ''">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-          <span v-show="!collapsed">新建对话</span>
+        <button class="new-chat-btn" @click="handleNewChat" :data-tooltip="collapsed ? '新建对话' : ''">
+          <span class="new-chat-inner">
+            <svg class="new-chat-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            <span class="new-chat-label">新建对话</span>
+          </span>
         </button>
       </div>
 
@@ -133,7 +141,7 @@ async function confirmLogout() {
           :to="menu.path"
           class="nav-item"
           :class="{ active: activeMenu === menu.path }"
-          :title="collapsed ? menu.label : ''"
+          :data-tooltip="collapsed ? menu.label : ''"
         >
           <!-- Chat 图标 -->
           <svg v-if="menu.name === 'Chat'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
@@ -155,37 +163,40 @@ async function confirmLogout() {
           <svg v-else-if="menu.name === 'Role'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
           </svg>
-          <span v-show="!collapsed">{{ menu.label }}</span>
+          <span>{{ menu.label }}</span>
         </router-link>
 
-        <!-- 会话列表（展开状态始终显示） -->
-        <template v-if="!collapsed">
-          <div class="session-section">
-            <div class="session-section-header">
-              <span>对话记录</span>
-            </div>
-            <TransitionGroup tag="div" name="session-item" class="session-list">
-              <div
-                v-for="s in chatStore.sessions"
-                :key="s.id"
-                class="session-item"
-                :class="{ active: chatStore.currentSessionId === s.id }"
-                @click="handleSelectSession(s)"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                </svg>
-                <span class="session-title">{{ s.title }}</span>
-                <button class="session-del" @click="handleDeleteSession(s, $event)">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                  </svg>
-                </button>
-              </div>
-              <div v-if="!chatStore.sessions.length && !chatStore.loading" key="empty" class="session-empty">暂无对话记录</div>
-            </TransitionGroup>
+        <!-- 会话列表 -->
+        <div class="session-section">
+          <div class="session-section-header">
+            <span>对话记录</span>
           </div>
-        </template>
+          <TransitionGroup tag="div" name="session-item" class="session-list">
+            <div
+              v-for="s in chatStore.sessions"
+              :key="s.id"
+              class="session-item"
+              :class="{ active: chatStore.currentSessionId === s.id && isChat }"
+              @click="handleSelectSession(s)"
+            >
+              <div class="session-content">
+                <div class="session-header">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  <span class="session-title">{{ s.title }}</span>
+                </div>
+                <span class="session-datasource">{{ s.dataSourceName }}</span>
+              </div>
+              <button class="session-del" @click="handleDeleteSession(s, $event)">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <div v-if="!chatStore.sessions.length && !chatStore.loading" key="empty" class="session-empty">暂无对话记录</div>
+          </TransitionGroup>
+        </div>
       </nav>
 
       <!-- 底部用户信息 -->
@@ -193,17 +204,17 @@ async function confirmLogout() {
         <div
           class="user-info"
           :class="{ clickable: true }"
-          :title="collapsed ? authStore.userInfo?.username : ''"
+          :data-tooltip="collapsed ? authStore.userInfo?.username : ''"
           @click="toggleUserMenu"
         >
           <div class="user-avatar">
             {{ authStore.userInfo?.username?.charAt(0).toUpperCase() }}
           </div>
-          <div v-show="!collapsed" class="user-meta">
+          <div class="user-meta">
             <span class="user-name">{{ authStore.userInfo?.username }}</span>
             <span class="user-role">{{ authStore.role }}</span>
           </div>
-          <svg v-show="!collapsed" class="user-chevron" :class="{ open: showUserMenu }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg class="user-chevron" :class="{ open: showUserMenu }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="18 15 12 9 6 15"/>
           </svg>
         </div>
@@ -238,7 +249,7 @@ async function confirmLogout() {
     </aside>
 
     <!-- ── 主内容区 ── -->
-    <main class="main-content">
+    <main class="main-content" :style="{ marginLeft: collapsed ? '56px' : 'var(--sidebar-width)' }">
       <router-view />
     </main>
 
@@ -288,52 +299,118 @@ async function confirmLogout() {
 
 <style scoped>
 .app-layout {
-  display: flex;
   height: 100vh;
   overflow: hidden;
   background: var(--color-bg-primary);
 }
 
-/* ── 侧边栏 ── */
+/* ── 侧边栏：fixed 定位，完全脱离文档流 ── */
 .sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
   width: var(--sidebar-width);
-  flex-shrink: 0;
   background: var(--color-bg-sidebar);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   transition: width 0.22s ease;
+  z-index: 100;
 }
 
 .sidebar.collapsed {
   width: 56px;
 }
-
 .sidebar-logo {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 20px 14px 16px;
+  height: 65px;
+  padding: 0 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  min-height: 65px;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
-.sidebar.collapsed .sidebar-logo {
-  justify-content: center;
-  padding: 20px 8px 16px;
+/* logo 图标：flex-shrink:0，始终在 padding-left:14px 处，不动 */
+.logo-icon-wrap {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  position: relative;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+/* 两个 svg 叠在一起，默认显示 logo，hover 时切换为展开箭头 */
+.logo-svg {
+  position: absolute;
+  top: 0; left: 0;
+  transition: opacity 0.15s ease;
+}
+.logo-svg--default { opacity: 1; }
+.logo-svg--expand  { opacity: 0; }
+
+/* 收起状态：鼠标悬停整个侧边栏时切换 logo 为展开图标 */
+.sidebar.collapsed:hover .logo-svg--default { opacity: 0; }
+.sidebar.collapsed:hover .logo-svg--expand  { opacity: 1; }
+
+/* 展开状态 logo 图标 hover 微微放大 */
+.sidebar:not(.collapsed) .logo-icon-wrap:hover {
+  transform: scale(1.08);
+  transition: transform 0.18s ease;
+}
+
+/* logo tooltip（收起时 hover 显示"打开侧栏"） */
+.logo-icon-wrap[data-tooltip]:not([data-tooltip=""]) {
+  position: relative;
+}
+.logo-icon-wrap[data-tooltip]:not([data-tooltip=""])::after {
+  content: attr(data-tooltip);
+  position: fixed;
+  left: 62px;
+  background: rgba(30, 30, 35, 0.95);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 9999;
+}
+.logo-icon-wrap[data-tooltip]:not([data-tooltip=""]):hover::after {
+  opacity: 1;
+  transform: translateX(0);
 }
 
 .logo-text {
-  flex: 1;
   font-size: 15px;
   font-weight: 600;
   color: var(--color-text-sidebar);
   letter-spacing: -0.3px;
   white-space: nowrap;
+  cursor: pointer;
   overflow: hidden;
+  max-width: 120px;
+  opacity: 1;
+  transition: max-width 0.22s ease, opacity 0.18s ease;
+}
+
+.sidebar.collapsed .logo-text {
+  max-width: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .collapse-btn {
+  margin-left: auto;
+  flex-shrink: 0;
   width: 24px;
   height: 24px;
   border-radius: var(--radius-sm);
@@ -341,42 +418,101 @@ async function confirmLogout() {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  max-width: 24px;
+  opacity: 1;
+  overflow: hidden;
+  transition: background var(--transition-fast), color var(--transition-fast),
+              max-width 0.22s ease, opacity 0.18s ease;
 }
-
 .collapse-btn:hover {
   background: var(--color-bg-sidebar-hover);
   color: var(--color-text-sidebar);
 }
-
-/* 收起状态的 logo 按钮 */
-.logo-collapse-btn {
-  width: 28px;
-  height: 28px;
-  position: relative;
-  flex-shrink: 0;
-  border-radius: 10px;
-}
-
-.logo-collapse-btn .logo-icon,
-.logo-collapse-btn .expand-icon {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transition: opacity 0.15s;
-}
-
-.logo-collapse-btn .expand-icon {
+.sidebar.collapsed .collapse-btn {
+  max-width: 0;
   opacity: 0;
+  pointer-events: none;
 }
 
-.logo-collapse-btn:hover .logo-icon {
+/* ── 新建对话 ── */
+.new-chat-wrap {
+  padding: 8px 10px;
+  display: flex;
+  overflow: hidden;
+  transition: padding 0.22s ease;
+}
+.sidebar.collapsed .new-chat-wrap {
+  padding: 8px;
+}
+.new-chat-btn {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-sidebar, rgba(255,255,255,0.12));
+  background: transparent;
+  color: var(--color-text-sidebar);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  width: 100%;
+  justify-content: center;
+  transition: background var(--transition-fast);
+}
+.new-chat-btn:hover { background: var(--color-bg-sidebar-hover); }
+.new-chat-btn[data-tooltip]:not([data-tooltip=""]) { position: relative; }
+.new-chat-btn[data-tooltip]:not([data-tooltip=""])::after {
+  content: attr(data-tooltip);
+  position: fixed;
+  left: 62px;
+  background: rgba(30, 30, 35, 0.95);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
   opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 9999;
 }
-
-.logo-collapse-btn:hover .expand-icon {
+.new-chat-btn[data-tooltip]:not([data-tooltip=""]):hover::after {
   opacity: 1;
+  transform: translateX(0);
+}
+.new-chat-icon {
+  flex-shrink: 0;
+}
+.new-chat-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: gap 0.22s ease;
+}
+.new-chat-label {
+  overflow: hidden;
+  max-width: 120px;
+  opacity: 1;
+  transition: max-width 0.22s ease, opacity 0.15s ease;
+}
+.sidebar.collapsed .new-chat-label {
+  max-width: 0;
+  opacity: 0;
+}
+.sidebar.collapsed .new-chat-btn {
+  padding: 7px;
+}
+.sidebar.collapsed .new-chat-inner {
+  gap: 0;
+}
+.sidebar.collapsed .new-chat-icon {
+  margin-left: 0;
 }
 
 /* ── 导航 ── */
@@ -387,6 +523,7 @@ async function confirmLogout() {
   flex-direction: column;
   gap: 2px;
   overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
 }
 
@@ -398,6 +535,16 @@ async function confirmLogout() {
   flex-direction: column;
   max-height: 320px;
   min-height: 0;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+  overflow: hidden;
+}
+
+.sidebar.collapsed .session-section {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .session-section-header {
@@ -410,35 +557,35 @@ async function confirmLogout() {
   color: var(--color-text-sidebar-muted);
   text-transform: uppercase;
   letter-spacing: 0.6px;
+  opacity: 1;
+  transition: opacity 0.2s ease;
 }
 
-.new-chat-wrap {
-  padding: 8px 10px;
+/* ── CSS Tooltip（无延迟，比 title 好看）── */
+.nav-item[data-tooltip]:not([data-tooltip=""]) {
+  position: relative;
 }
-
-.new-chat-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  padding: 7px 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border-sidebar, rgba(255,255,255,0.12));
-  background: transparent;
-  color: var(--color-text-sidebar);
-  font-size: 13px;
+.nav-item[data-tooltip]:not([data-tooltip=""])::after {
+  content: attr(data-tooltip);
+  position: fixed;
+  left: 62px;
+  background: rgba(30, 30, 35, 0.95);
+  color: #fff;
+  font-size: 12px;
   font-weight: 500;
-  cursor: pointer;
-  transition: background var(--transition-fast);
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 9999;
 }
-.new-chat-btn:hover {
-  background: var(--color-bg-sidebar-hover);
-}
-.sidebar.collapsed .new-chat-btn {
-  padding: 7px;
-  width: 36px;
-  margin: 0 auto;
+.nav-item[data-tooltip]:not([data-tooltip=""]):hover::after {
+  opacity: 1;
+  transform: translateX(0);
 }
 
 .session-list {
@@ -451,7 +598,7 @@ async function confirmLogout() {
 
 .session-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 7px;
   padding: 7px 8px;
   border-radius: var(--radius-md);
@@ -471,11 +618,37 @@ async function confirmLogout() {
   color: var(--color-text-sidebar);
 }
 
+.session-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.session-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+}
+
 .session-title {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.session-datasource {
+  font-size: 10px;
+  color: var(--color-text-sidebar-muted);
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 19px;
 }
 
 .session-del {
@@ -534,7 +707,7 @@ async function confirmLogout() {
 .nav-item {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 10px;
   padding: 9px 12px;
   border-radius: var(--radius-md);
@@ -546,8 +719,16 @@ async function confirmLogout() {
   overflow: hidden;
 }
 
-.sidebar:not(.collapsed) .nav-item {
-  justify-content: flex-start;
+.nav-item span {
+  opacity: 1;
+  max-width: 160px;
+  transition: opacity 0.15s ease, max-width 0.22s ease;
+  overflow: hidden;
+}
+
+.sidebar.collapsed .nav-item span {
+  opacity: 0;
+  max-width: 0;
 }
 
 .nav-item:hover {
@@ -566,26 +747,54 @@ async function confirmLogout() {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.sidebar.collapsed .sidebar-footer {
-  justify-content: center;
 }
 
 .user-info {
-  flex: 1;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 8px;
+  padding: 9px 2px;
   border-radius: var(--radius-md);
   min-width: 0;
+  transition: background var(--transition-fast);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sidebar:not(.collapsed) .user-info {
+  flex: 1;
+  padding-right: 12px;
 }
 
 .sidebar.collapsed .user-info {
   flex: none;
-  padding: 6px;
+}
+
+/* user-info tooltip（收起时 hover 显示用户名） */
+.user-info[data-tooltip]:not([data-tooltip=""]) {
+  position: relative;
+}
+.user-info[data-tooltip]:not([data-tooltip=""])::after {
+  content: attr(data-tooltip);
+  position: fixed;
+  left: 62px;
+  background: rgba(30, 30, 35, 0.95);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 9999;
+}
+.user-info[data-tooltip]:not([data-tooltip=""]):hover::after {
+  opacity: 1;
+  transform: translateX(0);
 }
 
 .user-avatar {
@@ -606,6 +815,15 @@ async function confirmLogout() {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  opacity: 1;
+  max-width: 160px;
+  transition: opacity 0.15s ease, max-width 0.22s ease;
+  overflow: hidden;
+}
+
+.sidebar.collapsed .user-meta {
+  opacity: 0;
+  max-width: 0;
 }
 
 .user-name {
@@ -643,8 +861,16 @@ async function confirmLogout() {
 .user-chevron {
   flex-shrink: 0;
   color: var(--color-text-sidebar-muted);
-  transition: transform var(--transition-fast);
+  transition: transform var(--transition-fast), opacity 0.15s ease, max-width 0.22s ease;
+  opacity: 1;
+  max-width: 12px;
+  overflow: hidden;
   margin-left: auto;
+}
+
+.sidebar.collapsed .user-chevron {
+  opacity: 0;
+  max-width: 0;
 }
 
 .user-chevron.open {
@@ -751,10 +977,12 @@ async function confirmLogout() {
 
 /* ── 主内容 ── */
 .main-content {
-  flex: 1;
+  transition: margin-left 0.22s ease;
+  height: 100vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 /* ── 退出确认 dialog ── */

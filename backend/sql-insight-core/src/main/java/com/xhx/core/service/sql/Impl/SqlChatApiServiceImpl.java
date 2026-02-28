@@ -46,6 +46,7 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
                 listener.onStage("AI 提示");
                 listener.onSummaryToken(warmMessage);
                 listener.onComplete();
+                saveBlockedRecord(finalSessionId, question, warmMessage);
                 return;
             }
 
@@ -107,20 +108,32 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
         } catch (Exception e) {
             log.error("AI 业务流执行失败, sessionId: {}", finalSessionId, e);
             listener.onError(e.getMessage());
+            // 会话已建立但流程中断（如 SQL 安全校验拦截），仍保存一条错误记录
+            if (finalSessionId != null) {
+                saveBlockedRecord(finalSessionId, question, e.getMessage());
+            }
         }
     }
 
     // ==================== 私有方法 ====================
 
     /**
-     * 保存对话记录 + 缓存结果，失败不影响主流程
+     * 保存被拦截/异常中断的对话记录，sql 为 null，summary 存错误原因
      */
+    private void saveBlockedRecord(Long sessionId, String question, String errorMessage) {
+        try {
+            chatRecordService.save(sessionId, question, null, 0, errorMessage, false);
+        } catch (Exception e) {
+            log.warn("拦截记录保存失败: {}", e.getMessage());
+        }
+    }
+
     private void saveRecord(Long sessionId, String question, String sql,
                             List<Map<String, Object>> data, String summary, boolean corrected) {
         try {
             Long recordId = chatRecordService.save(
                     sessionId, question, sql, data.size(), summary, corrected);
-            chatRecordService.cacheResult(recordId, data);
+            chatRecordService.cacheResult(recordId, data, null);
         } catch (Exception e) {
             log.warn("对话记录保存失败，不影响用户体验: {}", e.getMessage());
         }

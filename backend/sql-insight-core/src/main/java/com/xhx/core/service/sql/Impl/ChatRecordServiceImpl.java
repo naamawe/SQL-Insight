@@ -47,9 +47,20 @@ public class ChatRecordServiceImpl implements ChatRecordService {
     }
 
     @Override
-    public void cacheResult(Long recordId, List<Map<String, Object>> data) {
+    public void cacheResult(Long recordId, List<Map<String, Object>> data, String summary) {
         try {
             cacheService.putQueryResult(recordId, data);
+
+            // 如果提供了新的摘要，同时更新数据库中的 summary 和 rowTotal
+            if (summary != null) {
+                ChatRecord record = chatRecordMapper.selectById(recordId);
+                if (record != null) {
+                    record.setSummary(summary);
+                    record.setRowTotal(data.size());
+                    chatRecordMapper.updateById(record);
+                    log.info("对话记录已更新，recordId: {}，新行数: {}，摘要已刷新", recordId, data.size());
+                }
+            }
         } catch (Exception e) {
             log.warn("查询结果缓存失败，recordId: {}，原因: {}", recordId, e.getMessage());
         }

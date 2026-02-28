@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, nextTick, onMounted, onUnmounted, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { streamChat } from '@/api/chat'
+import { streamChat, chatApi } from '@/api/chat'
 import { dataSourceApi } from '@/api/datasource'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
@@ -30,7 +30,7 @@ function toggleDsDropdown() {
 }
 
 // 切换会话时同步数据源
-watch(() => chatStore.currentSessionId, (id) => {
+watch(() => chatStore.currentSessionId, async (id) => {
   if (id === null) {
     messages.value = []
     currentDataSourceId.value = null
@@ -38,9 +38,8 @@ watch(() => chatStore.currentSessionId, (id) => {
   } else {
     const s = chatStore.sessions.find(s => s.id === id)
     if (s) currentDataSourceId.value = s.dataSourceId
-    // sending 期间由 onData 自动创建会话，不清空消息
     if (!sending.value) {
-      messages.value = []
+      await loadHistory(id)
     }
   }
 })
@@ -55,6 +54,7 @@ watch(() => chatStore.clearChatSignal, () => {
 // ── 消息列表 ──────────────────────────────────────────
 const messages = ref<ChatMessage[]>([])
 const msgListRef = ref<HTMLElement>()
+const historyLoading = ref(false)
 
 function scrollToBottom() {
   nextTick(() => {
@@ -62,6 +62,44 @@ function scrollToBottom() {
       msgListRef.value.scrollTop = msgListRef.value.scrollHeight
     }
   })
+}
+
+async function loadHistory(sessionId: number) {
+  historyLoading.value = true
+  messages.value = []
+  try {
+    const records = (await chatApi.getSessionRecords(sessionId)) as unknown as any[]
+    for (const r of records) {
+      messages.value.push({ id: `u-${r.id}`, role: 'user', content: r.question })
+      messages.value.push({
+        id: `a-${r.id}`,
+        role: 'ai',
+        content: r.summary ?? '',
+        sql: r.sqlText,
+        sqlCorrected: r.corrected,
+        tableData: r.resultData ?? undefined,
+        total: r.rowTotal,
+        recordId: r.id,
+        resultExpired: r.resultExpired,
+      })
+    }
+    scrollToBottom()
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+async function rerunExpired(msg: ChatMessage) {
+  if (!msg.recordId) return
+  try {
+    const result: any = await chatApi.rerunRecord(msg.recordId)
+    msg.tableData = result.data
+    msg.content = result.summary
+    msg.total = result.total
+    msg.resultExpired = false
+  } catch {
+    ElMessage.error({ message: '重新执行失败', duration: 2000 })
+  }
 }
 
 // ── 输入 ──────────────────────────────────────────────
@@ -80,7 +118,7 @@ async function sendMessage() {
   const q = question.value.trim()
   if (!q || sending.value) return
   if (!chatStore.currentSessionId && !currentDataSourceId.value) {
-    ElMessage.warning('请先选择一个数据源')
+    ElMessage.warning({ message: '请先选择一个数据源', duration: 2000 })
     return
   }
 
@@ -135,8 +173,14 @@ function toggleSql(id: string) {
 
 // ── 初始化 ────────────────────────────────────────────
 onMounted(async () => {
-  const [, dsList] = await Promise.all([chatStore.loadSessions(), dataSourceApi.list()])
-  dataSources.value = dsList
+  // 先恢复历史记录，避免闪欢迎界面
+  const sid = chatStore.currentSessionId
+  if (sid !== null && !sending.value) {
+    loadHistory(sid)  // 不 await，让历史加载和数据源加载并行
+  }
+  const fetchDs = authStore.isAdmin ? dataSourceApi.list() : dataSourceApi.myList()
+  const [, dsList] = await Promise.all([chatStore.loadSessions(), fetchDs])
+  dataSources.value = dsList as any
   document.addEventListener('mousedown', handleOutsideClick)
 })
 
@@ -158,7 +202,10 @@ function handleOutsideClick(e: MouseEvent) {
 
       <!-- ── 空状态：居中欢迎屏 ── -->
       <Transition name="welcome">
-        <div v-if="!messages.length" class="welcome-screen">
+        <div v-if="historyLoading" class="history-loading">
+          <div class="loading-spinner" />
+        </div>
+        <div v-else-if="!messages.length && !chatStore.currentSessionId" class="welcome-screen">
           <div class="welcome-logo">
             <svg width="44" height="44" viewBox="0 0 36 36" fill="none">
               <rect width="36" height="36" rx="10" fill="#D97706"/>
@@ -250,8 +297,12 @@ function handleOutsideClick(e: MouseEvent) {
                 <div v-if="msg.tableData && msg.tableData.length" class="result-table-wrap">
                   <div class="result-meta">共 {{ msg.total }} 条结果</div>
                   <el-table :data="msg.tableData" size="small" class="result-table" max-height="300">
-                    <el-table-column v-for="col in Object.keys(msg.tableData[0])" :key="col" :prop="col" :label="col" min-width="100" show-overflow-tooltip />
+                    <el-table-column v-for="col in Object.keys(msg.tableData[0] || {})" :key="col" :prop="col" :label="col" min-width="100" show-overflow-tooltip />
                   </el-table>
+                </div>
+                <div v-else-if="msg.resultExpired && msg.sql" class="expired-hint">
+                  数据已过期
+                  <button class="rerun-btn" @click="rerunExpired(msg)">重新执行</button>
                 </div>
                 <div v-if="msg.content" class="ai-text">{{ msg.content }}</div>
                 <div v-if="msg.loading && !msg.stage" class="typing-dots"><span /><span /><span /></div>
@@ -328,6 +379,24 @@ function handleOutsideClick(e: MouseEvent) {
   overflow: hidden;
   background: var(--color-bg-primary);
 }
+
+/* ── 历史加载中 ── */
+.history-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── 欢迎屏：绝对定位铺满，内容自己居中 ── */
 .welcome-screen {
@@ -806,4 +875,25 @@ function handleOutsideClick(e: MouseEvent) {
 }
 
 .stop-btn:hover { background: #fef2f2; color: var(--color-error); border-color: var(--color-error); }
+
+.expired-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  padding: 8px 0;
+}
+
+.rerun-btn {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.rerun-btn:hover { background: var(--color-accent-bg); }
 </style>

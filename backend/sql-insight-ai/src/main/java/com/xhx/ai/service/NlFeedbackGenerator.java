@@ -4,6 +4,7 @@ import com.xhx.ai.listener.ChatStreamListener;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.StreamingResponseHandler;
+import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.output.Response;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ import java.util.Map;
 public class NlFeedbackGenerator {
 
     private final StreamingChatLanguageModel streamingChatLanguageModel;
+    private final ChatLanguageModel chatLanguageModel;
 
     /** 传给 AI 的最大样本行数，避免结果集过大导致 token 超限 */
     private static final int MAX_SAMPLE_ROWS = 5;
@@ -44,6 +46,31 @@ public class NlFeedbackGenerator {
             3. 不超过 50 个字
             4. 如果结果为空，说明未找到符合条件的数据
             """;
+
+    /**
+     * 阻塞式生成摘要（用于 rerun 等同步场景）
+     *
+     * @param question 用户原始问题
+     * @param sql      已执行的 SQL
+     * @param data     查询结果集
+     * @return 生成的摘要文本，失败时返回空字符串
+     */
+    public String generate(String question, String sql, List<Map<String, Object>> data) {
+        String userContent = buildUserContent(question, sql, data);
+
+        try {
+            Response<dev.langchain4j.data.message.AiMessage> response = chatLanguageModel.generate(
+                    List.of(
+                            SystemMessage.from(SYSTEM_PROMPT),
+                            UserMessage.from(userContent)
+                    )
+            );
+            return response.content().text();
+        } catch (Exception e) {
+            log.warn("阻塞式摘要生成异常: {}", e.getMessage());
+            return "";
+        }
+    }
 
     /**
      * 流式生成摘要，通过监听器逐 token 推送结论。

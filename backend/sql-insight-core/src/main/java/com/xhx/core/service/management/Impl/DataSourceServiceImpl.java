@@ -81,8 +81,8 @@ public class DataSourceServiceImpl implements DataSourceService {
     @Transactional(rollbackFor = Exception.class)
     public void addDataSource(DataSourceSaveDTO saveDto) {
         DataSource ds = convertToEntity(saveDto);
-        testConnectionInternal(ds);                         // 使用明文密码测试连接
-        ds.setPassword(passwordCipher.encrypt(ds.getPassword())); // 加密后再持久化
+        testConnectionInternal(ds);
+        ds.setPassword(passwordCipher.encrypt(ds.getPassword()));
         dataSourceMapper.insert(ds);
 
         UserDataSource uds = new UserDataSource();
@@ -198,10 +198,10 @@ public class DataSourceServiceImpl implements DataSourceService {
         final String plainPassword;
         if (StringUtils.hasText(updateDto.getPassword())) {
             plainPassword = updateDto.getPassword();
-            newDs.setPassword(passwordCipher.encrypt(plainPassword)); // 新密码加密存储
+            newDs.setPassword(passwordCipher.encrypt(plainPassword));
         } else {
-            plainPassword = passwordCipher.decrypt(oldDs.getPassword()); // 解密旧密码用于测试
-            newDs.setPassword(oldDs.getPassword());                       // 保留已加密的旧密码
+            plainPassword = passwordCipher.decrypt(oldDs.getPassword());
+            newDs.setPassword(oldDs.getPassword());
         }
 
         // 用明文密码做连接测试
@@ -258,15 +258,52 @@ public class DataSourceServiceImpl implements DataSourceService {
         props.setProperty("user", ds.getUsername());
         props.setProperty("password", ds.getPassword());
         props.setProperty("connectTimeout", "5000");
-        
+
         try (Connection conn = DriverManager.getConnection(ds.toJdbcUrl(), props)) {
             if (conn == null || conn.isClosed()) {
                 throw new SQLException("连接建立失败");
             }
         } catch (SQLException e) {
             log.error("数据源 [{}] 连接测试失败: {}", ds.getConnName(), e.getMessage());
-            throw new ConnectionException("连接失败: " + e.getMessage());
+            String errorMsg = parseConnectionError(e);
+            throw new ConnectionException(errorMsg);
         }
+    }
+
+    /**
+     * 解析 SQL 异常，返回用户友好的错误信息
+     */
+    private String parseConnectionError(SQLException e) {
+        String msg = e.getMessage().toLowerCase();
+
+        // 认证失败
+        if (msg.contains("access denied") || msg.contains("authentication failed")
+                || msg.contains("password") || msg.contains("login failed")) {
+            return "用户名或密码错误";
+        }
+
+        // 连接超时
+        if (msg.contains("timeout") || msg.contains("timed out")) {
+            return "连接超时，请检查主机地址和端口是否正确";
+        }
+
+        // 主机不可达
+        if (msg.contains("unknown host") || msg.contains("nodename nor servname provided")) {
+            return "无法解析主机地址，请检查主机名是否正确";
+        }
+
+        // 连接被拒绝
+        if (msg.contains("connection refused") || msg.contains("connect timed out")) {
+            return "连接被拒绝，请检查数据库服务是否启动以及端口是否正确";
+        }
+
+        // 数据库不存在
+        if (msg.contains("unknown database") || msg.contains("database") && msg.contains("does not exist")) {
+            return "数据库不存在，请检查数据库名称是否正确";
+        }
+
+        // 其他错误，返回简化的错误信息
+        return "连接失败: " + e.getMessage();
     }
 
     private List<String> fetchTableNamesFromTarget(DataSource ds) {

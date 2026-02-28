@@ -13,6 +13,8 @@ export const dataSourceApi = {
 
   list: () => http.get<DataSourceVO[]>('/data-sources/admin/list'),
 
+  myList: () => http.get<DataSourceVO[]>('/data-sources/my'),
+
   save: (dto: DataSourceSaveDTO) =>
     http.post<void>('/data-sources/admin', dto),
 

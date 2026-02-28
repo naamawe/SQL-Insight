@@ -157,7 +157,7 @@ async function savePolicy() {
   policySaving.value = true
   try {
     await queryPolicyApi.save(policy.value)
-    ElMessage.success('查询策略已保存')
+    ElMessage.success({ message: '查询策略已保存', duration: 2000 })
     hasPolicy.value = true
   } finally {
     policySaving.value = false
@@ -167,7 +167,7 @@ async function savePolicy() {
 async function deletePolicy() {
   if (!selectedRoleId.value) return
   await queryPolicyApi.remove(selectedRoleId.value)
-  ElMessage.success('策略已删除')
+  ElMessage.success({ message: '策略已删除', duration: 2000 })
   hasPolicy.value = false
   policy.value = { roleId: selectedRoleId.value, allowJoin: 0, allowSubquery: 0, allowAggregation: 0, maxLimit: 1000 }
 }
@@ -201,7 +201,7 @@ async function saveAuth() {
   authSaving.value = true
   try {
     await userAuthApi.assign(selectedUserId.value, authorizedIds.value)
-    ElMessage.success('数据源授权已保存')
+    ElMessage.success({ message: '数据源授权已保存', duration: 2000 })
   } finally {
     authSaving.value = false
   }
@@ -274,7 +274,7 @@ async function saveTablePerm() {
   tableSaving.value = true
   try {
     await rolePermissionApi.assign(tablePermRoleId.value, tablePermDsId.value, authorizedTables.value)
-    ElMessage.success('表权限已保存')
+    ElMessage.success({ message: '表权限已保存', duration: 2000 })
   } finally {
     tableSaving.value = false
   }

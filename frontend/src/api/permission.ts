@@ -30,6 +30,9 @@ export const rolePermissionApi = {
   getSummary: (roleId: number) =>
     http.get<Record<number, string[]>>('/role-permissions/summary', { params: { roleId } }),
 
+  mySummary: () =>
+    http.get<Record<number, string[]>>('/role-permissions/my-summary'),
+
   assign: (roleId: number, dataSourceId: number, tableNames: string[]) =>
     http.post<void>('/role-permissions', { roleId, dataSourceId, tableNames }),
 

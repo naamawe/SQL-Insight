@@ -114,4 +114,13 @@ public interface CacheService {
      * 判断查询结果缓存是否存在
      */
     boolean hasQueryResult(Long recordId);
+
+    /**
+     * 批量删除查询结果缓存（会话删除时调用）
+     *
+     * <p>入参为空时直接返回，不执行任何操作。
+     *
+     * @param recordIds 需要清除缓存的对话记录ID列表
+     */
+    void evictQueryResults(List<Long> recordIds);
 }
