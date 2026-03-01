@@ -22,7 +22,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 角色权限服务 - 最终完善版
+ * 角色权限服务
  * @author master
  */
 @Slf4j
@@ -54,9 +54,12 @@ public class RolePermissionServiceImpl extends ServiceImpl<TablePermissionMapper
         if (!CollectionUtils.isEmpty(tableNames)) {
             List<String> actualTables = dataSourceService.getTableNames(dataSourceId);
 
-            Set<String> actualTableSet = new HashSet<>(actualTables);
+            Set<String> actualTableSet = actualTables.stream()
+                    .map(String::toLowerCase)
+                    .collect(Collectors.toSet());
+
             List<String> invalidTables = tableNames.stream()
-                    .filter(name -> !actualTableSet.contains(name))
+                    .filter(name -> !actualTableSet.contains(name.toLowerCase()))
                     .toList();
 
             if (!invalidTables.isEmpty()) {
@@ -73,7 +76,7 @@ public class RolePermissionServiceImpl extends ServiceImpl<TablePermissionMapper
                 TablePermission tp = new TablePermission();
                 tp.setRoleId(roleId);
                 tp.setDataSourceId(dataSourceId);
-                tp.setTableName(name);
+                tp.setTableName(name.toLowerCase());
                 tp.setPermission("SELECT");
                 return tp;
             }).toList();
@@ -94,7 +97,6 @@ public class RolePermissionServiceImpl extends ServiceImpl<TablePermissionMapper
 
     @Override
     public void refreshUserPermissionsCache(Long userId, Long roleId) {
-        // 兼容旧调用，委托给 PermissionLoader
         permissionLoader.doLoadFromDb(userId, roleId);
     }
 
@@ -127,7 +129,6 @@ public class RolePermissionServiceImpl extends ServiceImpl<TablePermissionMapper
             return Collections.emptyMap();
         }
 
-        // 按数据源分组
         return allPerms.stream()
                 .collect(Collectors.groupingBy(
                         TablePermission::getDataSourceId,

@@ -52,6 +52,7 @@ public class DataSourceServiceImpl implements DataSourceService {
     private final CacheService              cacheService;
     private final ApplicationEventPublisher eventPublisher;
     private final DataSourcePasswordCipher  passwordCipher;
+
     /**
      * 数据库类型 -> 驱动类名映射表
      */
@@ -66,7 +67,6 @@ public class DataSourceServiceImpl implements DataSourceService {
     public void testConnection(DataSourceSaveDTO saveDto) {
         testConnectionInternal(convertToEntity(saveDto));
     }
-
 
     /**
      * 新增数据源
@@ -99,7 +99,8 @@ public class DataSourceServiceImpl implements DataSourceService {
                 new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        eventPublisher.publishEvent(new DataSourceSyncEvent(this, dsId));                    }
+                        eventPublisher.publishEvent(new DataSourceSyncEvent(this, dsId));
+                    }
                 });
     }
 
@@ -253,7 +254,6 @@ public class DataSourceServiceImpl implements DataSourceService {
     // ==================== 私有工具方法 ====================
 
     private void testConnectionInternal(DataSource ds) {
-        // 设置连接超时，避免长时间等待
         Properties props = new Properties();
         props.setProperty("user", ds.getUsername());
         props.setProperty("password", ds.getPassword());
@@ -270,50 +270,62 @@ public class DataSourceServiceImpl implements DataSourceService {
         }
     }
 
-    /**
-     * 解析 SQL 异常，返回用户友好的错误信息
-     */
     private String parseConnectionError(SQLException e) {
         String msg = e.getMessage().toLowerCase();
 
-        // 认证失败
         if (msg.contains("access denied") || msg.contains("authentication failed")
                 || msg.contains("password") || msg.contains("login failed")) {
             return "用户名或密码错误";
         }
-
-        // 连接超时
         if (msg.contains("timeout") || msg.contains("timed out")) {
             return "连接超时，请检查主机地址和端口是否正确";
         }
-
-        // 主机不可达
         if (msg.contains("unknown host") || msg.contains("nodename nor servname provided")) {
             return "无法解析主机地址，请检查主机名是否正确";
         }
-
-        // 连接被拒绝
         if (msg.contains("connection refused") || msg.contains("connect timed out")) {
             return "连接被拒绝，请检查数据库服务是否启动以及端口是否正确";
         }
-
-        // 数据库不存在
         if (msg.contains("unknown database") || msg.contains("database") && msg.contains("does not exist")) {
             return "数据库不存在，请检查数据库名称是否正确";
         }
-
-        // 其他错误，返回简化的错误信息
         return "连接失败: " + e.getMessage();
     }
 
+    /**
+     * 从目标库获取用户表列表。
+     * <ul>
+     *   <li>MySQL      → catalog=databaseName, schema=null（MySQL 无 schema 概念）</li>
+     *   <li>PostgreSQL → catalog=null,         schema="public"（只取用户表）</li>
+     *   <li>SQL Server → catalog=databaseName, schema="dbo"（默认 schema）</li>
+     * </ul>
+     */
     private List<String> fetchTableNamesFromTarget(DataSource ds) {
         List<String> tables = new ArrayList<>();
-        // ds.password 从 DB 中读出是密文，建连接前需解密
-        javax.sql.DataSource pooledDs = dynamicDataSourceManager.getDataSource(passwordCipher.decryptedCopy(ds));
+        javax.sql.DataSource pooledDs = dynamicDataSourceManager.getDataSource(
+                passwordCipher.decryptedCopy(ds));
+
         try (Connection conn = pooledDs.getConnection()) {
             DatabaseMetaData meta = conn.getMetaData();
-            try (ResultSet rs = meta.getTables(
-                    ds.getDatabaseName(), null, null, new String[]{"TABLE"})) {
+
+            String catalog;
+            String schema;
+            switch (ds.getDbType().toLowerCase()) {
+                case "postgresql" -> {
+                    catalog = null;
+                    schema  = "public";
+                }
+                case "sqlserver" -> {
+                    catalog = ds.getDatabaseName();
+                    schema  = "dbo";
+                }
+                default -> {
+                    catalog = ds.getDatabaseName();
+                    schema  = null;
+                }
+            }
+
+            try (ResultSet rs = meta.getTables(catalog, schema, null, new String[]{"TABLE"})) {
                 while (rs.next()) {
                     tables.add(rs.getString("TABLE_NAME"));
                 }
@@ -321,6 +333,7 @@ public class DataSourceServiceImpl implements DataSourceService {
         } catch (SQLException e) {
             throw new ServiceException("同步数据库表结构失败: " + e.getMessage());
         }
+
         Collections.sort(tables);
         return tables;
     }

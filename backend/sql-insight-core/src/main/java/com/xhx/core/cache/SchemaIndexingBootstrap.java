@@ -44,7 +44,12 @@ public class SchemaIndexingBootstrap implements ApplicationRunner {
     private final SchemaIndexingFacade   schemaIndexingFacade;
     private final SchemaIndexingService  schemaIndexingService;
 
-    /** 与text-embedding-v3 模型维度一致 */
+    /**
+     * 向量维度：1024
+     *
+     * <p><b>注意：</b>此值一旦确定并写入 Qdrant Collection，不可在线变更。
+     * 如需修改维度，须删除 Collection 重建（会清空所有索引）。
+     */
     private static final int VECTOR_SIZE = 1024;
 
     @Override
@@ -56,7 +61,7 @@ public class SchemaIndexingBootstrap implements ApplicationRunner {
             schemaIndexingService.ensureCollection(VECTOR_SIZE);
         } catch (Exception e) {
             log.error("[SchemaIndexingBootstrap] Qdrant 不可用，" +
-                      "向量检索将全程降级为关键词匹配: {}", e.getMessage());
+                    "向量检索将全程降级为关键词匹配: {}", e.getMessage());
             return;
         }
 

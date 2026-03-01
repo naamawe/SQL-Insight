@@ -53,6 +53,7 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
             TablesNamesFinder finder = new TablesNamesFinder();
             Set<String> tableSet = finder.getTables(statement);
             List<String> tableNames = tableSet.stream()
+                    .map(t -> t.contains(".") ? t.substring(t.lastIndexOf(".") + 1) : t)
                     .map(String::toLowerCase)
                     .toList();
 
@@ -109,7 +110,7 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
             throw new RuntimeException("必须包含行数限制，最大允许 "
                     + policy.getMaxLimit() + " 行");
         }
-        
+
         // 校验LIMIT值不能超过策略配置的最大值
         int limitValue = extractLimitValue(upperSql, dbType);
         if (limitValue > policy.getMaxLimit()) {
@@ -172,7 +173,6 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
             switch (dbType) {
                 case "mysql":
                 case "postgresql":
-                    // 匹配 LIMIT 100 或 LIMIT 100 OFFSET 10
                     Pattern pattern = Pattern.compile("LIMIT\\s+(\\d+)");
                     Matcher matcher = pattern.matcher(upperSql);
                     if (matcher.find()) {
@@ -180,7 +180,6 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
                     }
                     break;
                 case "sqlserver":
-                    // 匹配 TOP 100
                     pattern = Pattern.compile("TOP\\s+(\\d+)");
                     matcher = pattern.matcher(upperSql);
                     if (matcher.find()) {
@@ -191,7 +190,6 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
         } catch (Exception e) {
             log.warn("提取LIMIT值失败: {}", e.getMessage());
         }
-        // 如果提取失败，返回0（会在后续检查中被拦截）
         return 0;
     }
 }
