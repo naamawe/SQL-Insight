@@ -7,7 +7,9 @@
       "Bash(\"c:/Users/master/IdeaProjects/SQL-Insight/frontend/src/views/permission/PermissionView.vue\":*)",
       "Bash(mvn clean compile -DskipTests)",
       "Bash(npm run dev)",
-      "Bash(xargs grep -l \"权限信息\")"
+      "Bash(xargs grep -l \"权限信息\")",
+      "Bash(mvn clean install -DskipTests -T 4)",
+      "Bash(mvn clean compile -DskipTests -pl sql-insight-core -am)"
     ]
   }
 }

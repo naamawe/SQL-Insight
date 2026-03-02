@@ -14,6 +14,7 @@ const chatStore = useChatStore()
 const dataSources = ref<DataSourceVO[]>([])
 const currentDataSourceId = ref<number | null>(null)
 const dsDropdownOpen = ref(false)
+const dataSourceLocked = ref(false) // 数据源是否已锁定
 
 const currentDsName = computed(() => {
   if (!currentDataSourceId.value) return null
@@ -35,9 +36,13 @@ watch(() => chatStore.currentSessionId, async (id) => {
     messages.value = []
     currentDataSourceId.value = null
     question.value = ''
+    dataSourceLocked.value = false // 重置锁定状态
   } else {
     const s = chatStore.sessions.find(s => s.id === id)
-    if (s) currentDataSourceId.value = s.dataSourceId
+    if (s) {
+      currentDataSourceId.value = s.dataSourceId
+      dataSourceLocked.value = true // 已有会话，锁定数据源
+    }
     if (!sending.value) {
       await loadHistory(id)
     }
@@ -49,6 +54,7 @@ watch(() => chatStore.clearChatSignal, () => {
   messages.value = []
   currentDataSourceId.value = null
   question.value = ''
+  dataSourceLocked.value = false // 重置锁定状态
 })
 
 // ── 消息列表 ──────────────────────────────────────────
@@ -92,13 +98,33 @@ async function loadHistory(sessionId: number) {
 
 async function rerunExpired(msg: ChatMessage) {
   if (!msg.recordId) return
+
+  // 显示加载状态
+  msg.loading = true
+  msg.resultExpired = false
+  msg.content = ''
+
   try {
     const result: any = await chatApi.rerunRecord(msg.recordId)
     msg.tableData = result.data
-    msg.content = result.summary
     msg.total = result.total
-    msg.resultExpired = false
+
+    // 流式显示文本
+    const summary = result.summary || ''
+    let index = 0
+    const interval = setInterval(() => {
+      if (index < summary.length) {
+        msg.content += summary[index]
+        index++
+        scrollToBottom()
+      } else {
+        clearInterval(interval)
+        msg.loading = false
+      }
+    }, 20) // 每20ms显示一个字符
   } catch {
+    msg.loading = false
+    msg.resultExpired = true
     ElMessage.error({ message: '重新执行失败', duration: 2000 })
   }
 }
@@ -122,6 +148,9 @@ async function sendMessage() {
     ElMessage.warning({ message: '请先选择一个数据源', duration: 2000 })
     return
   }
+
+  // 发送消息后立即锁定数据源
+  dataSourceLocked.value = true
 
   const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: 'user', content: q }
   messages.value.push(userMsg)
@@ -183,6 +212,12 @@ onMounted(async () => {
   if (sid !== null && !sending.value) {
     const sessionExists = chatStore.sessions.some(s => s.id === sid)
     if (sessionExists) {
+      // 同步数据源
+      const session = chatStore.sessions.find(s => s.id === sid)
+      if (session) {
+        currentDataSourceId.value = session.dataSourceId
+        dataSourceLocked.value = true
+      }
       loadHistory(sid)
     } else {
       // 会话不存在（可能是切换账号后的旧会话），清空
@@ -325,8 +360,8 @@ function handleOutsideClick(e: MouseEvent) {
             <div class="input-box">
               <textarea v-model="question" class="input-textarea" placeholder="输入你的问题，按 Enter 发送，Shift+Enter 换行..." rows="1" @keydown="handleKeydown" />
               <div class="input-toolbar">
-                <!-- 数据源胶囊（新会话时显示选择器，已有会话时显示 badge） -->
-                <div v-if="!chatStore.currentSessionId" class="ds-pill-wrap">
+                <!-- 数据源胶囊（未锁定时显示选择器，已锁定时显示 badge） -->
+                <div v-if="!dataSourceLocked" class="ds-pill-wrap">
                   <button class="ds-pill" :class="{ active: currentDataSourceId }" @click="toggleDsDropdown">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
@@ -456,9 +491,9 @@ function handleOutsideClick(e: MouseEvent) {
 }
 
 .welcome-logo { margin-bottom: 4px; }
-.welcome-title { font-size: 24px; font-weight: 700; color: var(--color-text-primary); letter-spacing: -0.5px; margin: 0; }
-.welcome-desc { font-size: 14px; color: var(--color-text-secondary); text-align: center; margin: 0; }
-.welcome-hint { font-size: 13px; color: var(--color-text-secondary); }
+.welcome-title { font-size: 28px; font-weight: 600; color: var(--color-text-primary); letter-spacing: -0.5px; margin: 0; }
+.welcome-desc { font-size: 15px; font-weight: 450; color: var(--color-text-secondary); text-align: center; margin: 0; }
+.welcome-hint { font-size: 14px; font-weight: 450; color: var(--color-text-secondary); }
 .welcome-hint.warn { color: var(--color-warning); }
 
 .welcome-ds {
@@ -642,7 +677,7 @@ function handleOutsideClick(e: MouseEvent) {
   width: 100%;
 }
 
-.msg-row { display: flex; padding: 0 24px; max-width: 800px; width: 100%; margin: 0 auto; box-sizing: border-box; }
+.msg-row { display: flex; padding: 0 24px; max-width: 800px; width: 100%; margin: 0 auto 24px auto; box-sizing: border-box; }
 .msg-row.user { justify-content: flex-end; }
 .msg-row.ai   { justify-content: flex-start; }
 .bubble { max-width: 72%; }
@@ -652,7 +687,8 @@ function handleOutsideClick(e: MouseEvent) {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg);
   padding: 10px 14px;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 450;
   color: var(--color-text-primary);
   line-height: 1.6;
   white-space: pre-wrap;
@@ -759,7 +795,8 @@ function handleOutsideClick(e: MouseEvent) {
 }
 
 .ai-text {
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 450;
   color: var(--color-text-primary);
   line-height: 1.7;
   white-space: pre-wrap;
@@ -841,7 +878,8 @@ function handleOutsideClick(e: MouseEvent) {
   border: none;
   outline: none;
   background: transparent;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 450;
   color: var(--color-text-primary);
   font-family: var(--font-sans);
   line-height: 1.6;

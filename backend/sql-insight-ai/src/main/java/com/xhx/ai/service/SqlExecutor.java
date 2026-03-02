@@ -49,16 +49,18 @@ public class SqlExecutor {
 
         AiMessage aiReply = callAi(messages);
         String raw = aiReply.text();
-
+        log.info("AI回复为{}", raw);
         String cleaned = CommonUtil.cleanSql(raw);
         boolean isExplain = cleaned.startsWith("[EXPLAIN]");
 
-        String contentToSave = isExplain ? cleaned.replace("[EXPLAIN]", "").trim() : cleaned;
-
-        chatMemoryStore.updateMessages(sessionId, List.of(UserMessage.from(question)));
-        chatMemoryStore.updateMessages(sessionId, List.of(AiMessage.from(contentToSave)));
-
-        log.info("AI 响应完成，原始长度: {}, 记忆长度: {}", raw.length(), contentToSave.length());
+        // EXPLAIN 类型不保存到 chat_message（AI 上下文），避免 AI 重复返回相同的解释
+        if (!isExplain) {
+            chatMemoryStore.updateMessages(sessionId, List.of(UserMessage.from(question)));
+            chatMemoryStore.updateMessages(sessionId, List.of(AiMessage.from(cleaned)));
+            log.info("AI 响应完成，已保存到记忆，原始长度: {}", raw.length());
+        } else {
+            log.info("AI 返回 EXPLAIN 类型，不保存到记忆，原始长度: {}", raw.length());
+        }
 
         return new AiResponse(raw, cleaned, isExplain);
     }
@@ -96,12 +98,14 @@ public class SqlExecutor {
         String cleaned = CommonUtil.cleanSql(raw);
         boolean isExplain = cleaned.startsWith("[EXPLAIN]");
 
-        String contentToSave = isExplain ? cleaned.replace("[EXPLAIN]", "").trim() : cleaned;
-
-        chatMemoryStore.updateMessages(sessionId, List.of(UserMessage.from("修正之前的查询错误")));
-        chatMemoryStore.updateMessages(sessionId, List.of(AiMessage.from(contentToSave)));
-
-        log.info("Self-correction 完成并已存入记忆，sessionId: {}", sessionId);
+        // EXPLAIN 类型不保存到 chat_message（AI 上下文）
+        if (!isExplain) {
+            chatMemoryStore.updateMessages(sessionId, List.of(UserMessage.from("修正之前的查询错误")));
+            chatMemoryStore.updateMessages(sessionId, List.of(AiMessage.from(cleaned)));
+            log.info("Self-correction 完成并已存入记忆，sessionId: {}", sessionId);
+        } else {
+            log.info("Self-correction 返回 EXPLAIN 类型，不保存到记忆，sessionId: {}", sessionId);
+        }
 
         return new AiResponse(raw, cleaned, isExplain);
     }

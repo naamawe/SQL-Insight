@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi } from '@/api/auth'
 import type { UserInfo } from '@/types'
+import { useChatStore } from './chat'
 
 export const useAuthStore = defineStore('auth', () => {
   // ── State ───────────────────────────────────────────
@@ -29,7 +30,6 @@ export const useAuthStore = defineStore('auth', () => {
   // ── Actions ─────────────────────────────────────────
   async function login(userName: string, password: string) {
     // 登录前先清理旧的聊天状态
-    const { useChatStore } = require('./chat')
     const chatStore = useChatStore()
     chatStore.clear()
 
@@ -56,7 +56,6 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('userInfo')
 
     // 清理聊天状态
-    const { useChatStore } = require('./chat')
     const chatStore = useChatStore()
     chatStore.clear()
   }

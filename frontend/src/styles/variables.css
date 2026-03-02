@@ -63,6 +63,12 @@
                'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   --font-mono: 'Fira Code', 'JetBrains Mono', 'Source Code Pro', Consolas, monospace;
 
+  /* --- 字体粗细 --- */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
   /* --- 过渡 --- */
   --transition-fast: 150ms ease;
   --transition-base: 250ms ease;

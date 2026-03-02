@@ -126,15 +126,21 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
         if (policy.getAllowAggregation() == 0 && isAggregation(statement)) {
             throw new RuntimeException("当前策略禁止执行聚合统计");
         }
-        if (!hasRowLimit(upperSql, dbType)) {
-            throw new RuntimeException("必须包含行数限制，最大允许 "
-                    + policy.getMaxLimit() + " 行");
-        }
 
-        // 校验LIMIT值不能超过策略配置的最大值
-        int limitValue = extractLimitValue(upperSql, dbType);
-        if (limitValue > policy.getMaxLimit()) {
-            throw new RuntimeException("LIMIT 值不能超过 " + policy.getMaxLimit() + " 行");
+        // 智能判断是否需要 LIMIT 检查
+        if (needsRowLimit(statement, upperSql)) {
+            if (!hasRowLimit(upperSql, dbType)) {
+                throw new RuntimeException("必须包含行数限制，最大允许 "
+                        + policy.getMaxLimit() + " 行");
+            }
+
+            // 校验LIMIT值不能超过策略配置的最大值
+            int limitValue = extractLimitValue(upperSql, dbType);
+            if (limitValue > policy.getMaxLimit()) {
+                throw new RuntimeException("LIMIT 值不能超过 " + policy.getMaxLimit() + " 行");
+            }
+        } else {
+            log.debug("[安全审计] SQL 为单行聚合查询，豁免 LIMIT 检查");
         }
     }
 
@@ -146,6 +152,35 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
             case "sqlserver" -> upperSql.contains("TOP ");
             default          -> upperSql.contains("LIMIT");
         };
+    }
+
+    /**
+     * 智能判断 SQL 是否需要 LIMIT 检查
+     * <p>
+     * 豁免场景：
+     * 1. 单行聚合查询（COUNT/SUM/AVG/MAX/MIN 且无 GROUP BY）
+     * 2. 其他本质上只返回单行的查询
+     * <p>
+     * 需要检查的场景：
+     * 1. 普通 SELECT 查询
+     * 2. 带 GROUP BY 的聚合查询（可能返回多行）
+     * 3. 多表 JOIN 查询
+     */
+    private boolean needsRowLimit(Statement statement, String upperSql) {
+        // 如果包含聚合函数
+        if (isAggregation(statement)) {
+            // 但是有 GROUP BY，则可能返回多行，需要 LIMIT
+            if (upperSql.contains("GROUP BY")) {
+                log.debug("[安全审计] 检测到 GROUP BY 聚合查询，需要 LIMIT 检查");
+                return true;
+            }
+            // 单行聚合（如 SELECT COUNT(*) FROM ...），豁免 LIMIT
+            log.debug("[安全审计] 检测到单行聚合查询，豁免 LIMIT 检查");
+            return false;
+        }
+
+        // 其他所有查询都需要 LIMIT
+        return true;
     }
 
     /**
