@@ -28,6 +28,11 @@ export const useAuthStore = defineStore('auth', () => {
 
   // ── Actions ─────────────────────────────────────────
   async function login(userName: string, password: string) {
+    // 登录前先清理旧的聊天状态
+    const { useChatStore } = require('./chat')
+    const chatStore = useChatStore()
+    chatStore.clear()
+
     const tokenStr = await authApi.login({ username: userName, password }) as unknown as string
     token.value = tokenStr
     localStorage.setItem('token', tokenStr)
@@ -49,6 +54,11 @@ export const useAuthStore = defineStore('auth', () => {
     userInfo.value = null
     localStorage.removeItem('token')
     localStorage.removeItem('userInfo')
+
+    // 清理聊天状态
+    const { useChatStore } = require('./chat')
+    const chatStore = useChatStore()
+    chatStore.clear()
   }
 
   return {

@@ -58,5 +58,11 @@ export const useChatStore = defineStore('chat', () => {
     currentSessionId.value = null
   }
 
-  return { sessions, currentSessionId, loading, loadSessions, deleteSession, selectSession, startNew, clearChatSignal }
+  function clear() {
+    sessions.value = []
+    currentSessionId.value = null
+    clearChatSignal.value++
+  }
+
+  return { sessions, currentSessionId, loading, loadSessions, deleteSession, selectSession, startNew, clearChatSignal, clear }
 })

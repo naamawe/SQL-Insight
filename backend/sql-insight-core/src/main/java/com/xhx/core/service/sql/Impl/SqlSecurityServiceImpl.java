@@ -37,6 +37,20 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
     private static final Set<String> AGG_FUNCTIONS =
             Set.of("COUNT", "SUM", "AVG", "MAX", "MIN");
 
+    /**
+     * 系统元数据表白名单，这些表不需要权限检查
+     * 包含 MySQL/PostgreSQL/SQL Server 的常见系统表
+     */
+    private static final Set<String> SYSTEM_TABLES = Set.of(
+            // MySQL INFORMATION_SCHEMA
+            "columns", "tables", "schemata", "table_constraints", "key_column_usage",
+            "statistics", "views", "routines", "triggers", "events",
+            // PostgreSQL 系统表
+            "pg_catalog", "pg_class", "pg_attribute", "pg_namespace",
+            // SQL Server 系统表
+            "sys", "sysobjects", "syscolumns"
+    );
+
     @Override
     public void validate(String sql, Long userId, Long dataSourceId) {
         log.info("[安全审计] userId: {}, dsId: {}, sql: {}", userId, dataSourceId, sql);
@@ -79,6 +93,12 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
             throw new RuntimeException("权限信息不可用，请重新登录后再试");
         }
         for (String tableName : tableNames) {
+            // 跳过系统元数据表的权限检查
+            if (SYSTEM_TABLES.contains(tableName)) {
+                log.debug("[安全审计] 跳过系统表权限检查: {}", tableName);
+                continue;
+            }
+
             String required = dataSourceId + ":" + tableName + ":SELECT";
             if (!allPerms.contains(required)) {
                 throw new RuntimeException("无权访问表: " + tableName);

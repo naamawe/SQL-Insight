@@ -83,7 +83,8 @@ async function loadHistory(sessionId: number) {
         resultExpired: r.resultExpired,
       })
     }
-    scrollToBottom()
+    // 等待 DOM 更新和表格渲染完成后再滚动
+    setTimeout(() => scrollToBottom(), 100)
   } finally {
     historyLoading.value = false
   }
@@ -173,14 +174,22 @@ function toggleSql(id: string) {
 
 // ── 初始化 ────────────────────────────────────────────
 onMounted(async () => {
-  // 先恢复历史记录，避免闪欢迎界面
-  const sid = chatStore.currentSessionId
-  if (sid !== null && !sending.value) {
-    loadHistory(sid)  // 不 await，让历史加载和数据源加载并行
-  }
   const fetchDs = authStore.isAdmin ? dataSourceApi.list() : dataSourceApi.myList()
   const [, dsList] = await Promise.all([chatStore.loadSessions(), fetchDs])
   dataSources.value = dsList as any
+
+  // 加载会话列表后，验证 currentSessionId 是否有效
+  const sid = chatStore.currentSessionId
+  if (sid !== null && !sending.value) {
+    const sessionExists = chatStore.sessions.some(s => s.id === sid)
+    if (sessionExists) {
+      loadHistory(sid)
+    } else {
+      // 会话不存在（可能是切换账号后的旧会话），清空
+      chatStore.startNew()
+    }
+  }
+
   document.addEventListener('mousedown', handleOutsideClick)
 })
 

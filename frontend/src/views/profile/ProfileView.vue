@@ -20,6 +20,7 @@ const roleColorMap: Record<string, string> = {
 const dsList = ref<DataSourceVO[]>([])
 const tableMap = ref<Record<number, string[]>>({})
 const loading = ref(false)
+const roleName = ref<string>('')
 
 // ── 数据源列表搜索 ─────────────────────────────────────
 const dsListSearch = ref('')
@@ -94,12 +95,14 @@ async function handleChangePassword() {
 onMounted(async () => {
   loading.value = true
   try {
-    const [myDs, myTableMap] = await Promise.all([
+    const [myDs, myTableMap, myUserInfo] = await Promise.all([
       dataSourceApi.myList(),
       rolePermissionApi.mySummary(),
+      userApi.me(),
     ]) as any[]
     dsList.value = myDs
     tableMap.value = myTableMap ?? {}
+    roleName.value = myUserInfo?.roleName ?? '未分配角色'
   } finally {
     loading.value = false
   }
@@ -142,8 +145,8 @@ onMounted(async () => {
             <span class="info-value">{{ authStore.userInfo?.username }}</span>
           </div>
           <div class="info-row">
-            <span class="info-label">角色</span>
-            <span class="info-value">{{ authStore.role }}</span>
+            <span class="info-label">业务角色</span>
+            <span class="info-value">{{ roleName }}</span>
           </div>
         </div>
 
