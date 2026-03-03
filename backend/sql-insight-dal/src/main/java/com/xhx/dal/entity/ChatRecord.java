@@ -37,5 +37,8 @@ public class ChatRecord {
     /** 是否经过自动纠错：0-否，1-是 */
     private Short corrected;
 
+    /** 可视化配置（JSON格式） */
+    private String visualizationConfig;
+
     private LocalDateTime createTime;
 }

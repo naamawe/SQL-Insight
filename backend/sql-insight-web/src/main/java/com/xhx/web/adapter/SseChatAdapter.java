@@ -40,6 +40,11 @@ public class SseChatAdapter implements ChatStreamListener {
     }
 
     @Override
+    public void onVisualization(Object config) {
+        send("visualization", Map.of("config", config));
+    }
+
+    @Override
     public void onComplete() {
         try {
             emitter.send(SseEmitter.event().name("done").data("{}"));

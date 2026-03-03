@@ -1,7 +1,9 @@
 package com.xhx.core.service.sql.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xhx.common.exception.NotExistException;
+import com.xhx.core.model.dto.visualization.VisualizationConfig;
 import com.xhx.core.model.vo.ChatRecordVO;
 import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.sql.ChatRecordService;
@@ -28,6 +30,7 @@ public class ChatRecordServiceImpl implements ChatRecordService {
     private final ChatRecordMapper   chatRecordMapper;
     private final CacheService       cacheService;
     private final ChatSessionService chatSessionService;
+    private final ObjectMapper       objectMapper;
 
     @Override
     public Long save(Long sessionId, String question, String sql,
@@ -48,17 +51,39 @@ public class ChatRecordServiceImpl implements ChatRecordService {
 
     @Override
     public void cacheResult(Long recordId, List<Map<String, Object>> data, String summary) {
+        cacheResult(recordId, data, summary, null);
+    }
+
+    @Override
+    public void cacheResult(Long recordId, List<Map<String, Object>> data, String summary, VisualizationConfig visualizationConfig) {
         try {
             cacheService.putQueryResult(recordId, data);
 
-            // 如果提供了新的摘要，同时更新数据库中的 summary 和 rowTotal
-            if (summary != null) {
+            // 如果提供了新的摘要或可视化配置，更新数据库
+            if (summary != null || visualizationConfig != null) {
                 ChatRecord record = chatRecordMapper.selectById(recordId);
                 if (record != null) {
-                    record.setSummary(summary);
-                    record.setRowTotal(data.size());
-                    chatRecordMapper.updateById(record);
-                    log.info("对话记录已更新，recordId: {}，新行数: {}，摘要已刷新", recordId, data.size());
+                    boolean needUpdate = false;
+                    if (summary != null) {
+                        record.setSummary(summary);
+                        record.setRowTotal(data.size());
+                        needUpdate = true;
+                    }
+                    if (visualizationConfig != null) {
+                        try {
+                            String configJson = objectMapper.writeValueAsString(visualizationConfig);
+                            record.setVisualizationConfig(configJson);
+                            needUpdate = true;
+                            log.info("[可视化配置] 序列化成功，recordId: {}, JSON长度: {}", recordId, configJson.length());
+                        } catch (Exception e) {
+                            log.warn("可视化配置序列化失败，recordId: {}", recordId, e);
+                        }
+                    }
+                    if (needUpdate) {
+                        int rows = chatRecordMapper.updateById(record);
+                        log.info("[数据库更新] recordId: {}, 影响行数: {}, 可视化配置: {}",
+                                recordId, rows, visualizationConfig != null ? "已保存" : "未提供");
+                    }
                 }
             }
         } catch (Exception e) {
@@ -118,6 +143,16 @@ public class ChatRecordServiceImpl implements ChatRecordService {
     private ChatRecordVO toVO(ChatRecord record, List<Map<String, Object>> resultData) {
         boolean hasCache = resultData != null;
 
+        // 解析可视化配置
+        VisualizationConfig visualization = null;
+        if (record.getVisualizationConfig() != null) {
+            try {
+                visualization = objectMapper.readValue(record.getVisualizationConfig(), VisualizationConfig.class);
+            } catch (Exception e) {
+                log.warn("可视化配置反序列化失败，recordId: {}", record.getId(), e);
+            }
+        }
+
         return ChatRecordVO.builder()
                 .id(record.getId())
                 .sessionId(record.getSessionId())
@@ -129,6 +164,7 @@ public class ChatRecordServiceImpl implements ChatRecordService {
                 .createTime(record.getCreateTime())
                 .resultData(resultData)
                 .resultExpired(!hasCache)
+                .visualization(visualization)
                 .build();
     }
 }

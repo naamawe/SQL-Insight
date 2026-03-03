@@ -3,6 +3,10 @@ package com.xhx.core.service.sql.Impl;
 import com.xhx.ai.listener.ChatStreamListener;
 import com.xhx.ai.service.NlFeedbackGenerator;
 import com.xhx.common.util.CommonUtil;
+import com.xhx.core.analyzer.DataCharacteristicsAnalyzer;
+import com.xhx.core.analyzer.VisualizationRecommender;
+import com.xhx.core.model.dto.visualization.DataCharacteristics;
+import com.xhx.core.model.dto.visualization.VisualizationConfig;
 import com.xhx.core.service.sql.*;
 import com.xhx.dal.entity.ChatSession;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +30,8 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
     private final ChatSessionService  chatSessionService;
     private final NlFeedbackGenerator nlFeedbackGenerator;
     private final ChatRecordService   chatRecordService;
+    private final DataCharacteristicsAnalyzer dataCharacteristicsAnalyzer;
+    private final VisualizationRecommender visualizationRecommender;
 
     @Async("aiExecutor")
     @Override
@@ -61,6 +67,21 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
 
             listener.onData(data, finalSessionId);
 
+            // 生成可视化配置
+            VisualizationConfig visualizationConfig = null;
+            try {
+                DataCharacteristics characteristics = dataCharacteristicsAnalyzer.analyze(data);
+                visualizationConfig = visualizationRecommender.recommend(
+                        question, characteristics, data, finalSql);
+                log.info("[可视化配置] 生成成功，类型: {}", visualizationConfig.getPrimaryType());
+                listener.onVisualization(visualizationConfig);
+            } catch (Exception e) {
+                log.warn("可视化配置生成失败，不影响主流程: {}", e.getMessage(), e);
+            }
+
+            // 保存可视化配置供后续使用
+            final VisualizationConfig finalVisualizationConfig = visualizationConfig;
+
             // 收集流式摘要 token，完成后统一落库
             final StringBuilder summaryBuffer = new StringBuilder();
 
@@ -91,7 +112,7 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
                 public void onComplete() {
                     // 摘要流结束，所有数据已就绪，统一落库 + 缓存结果
                     saveRecord(capturedSessionId, question, finalSql,
-                            data, summaryBuffer.toString(), corrected);
+                            data, summaryBuffer.toString(), corrected, finalVisualizationConfig);
                     listener.onComplete();
                 }
 
@@ -100,7 +121,7 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
                     // 摘要生成失败，summary 为 null，其他数据仍然保存
                     log.warn("流式摘要失败，仍保存对话记录: {}", message);
                     saveRecord(capturedSessionId, question, finalSql,
-                            data, null, corrected);
+                            data, null, corrected, finalVisualizationConfig);
                     listener.onComplete(); // 静默降级，不暴露摘要错误给用户
                 }
             });
@@ -129,11 +150,15 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
     }
 
     private void saveRecord(Long sessionId, String question, String sql,
-                            List<Map<String, Object>> data, String summary, boolean corrected) {
+                            List<Map<String, Object>> data, String summary, boolean corrected,
+                            VisualizationConfig visualizationConfig) {
         try {
             Long recordId = chatRecordService.save(
                     sessionId, question, sql, data.size(), summary, corrected);
-            chatRecordService.cacheResult(recordId, data, null);
+            // 缓存结果数据和可视化配置（summary 已在 save 中保存，这里传 null）
+            chatRecordService.cacheResult(recordId, data, null, visualizationConfig);
+            log.info("对话记录已保存并缓存，recordId: {}, 可视化配置: {}",
+                    recordId, visualizationConfig != null ? "已生成" : "未生成");
         } catch (Exception e) {
             log.warn("对话记录保存失败，不影响用户体验: {}", e.getMessage());
         }

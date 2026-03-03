@@ -1,6 +1,7 @@
 import http from '@/utils/http'
 import type { ChatSession, ChatRecordVO } from '@/types'
 import type { PageResult } from '@/types'
+import type { VisualizationConfig } from '@/types/visualization'
 
 export interface SqlChatRequest {
   sessionId?: number
@@ -39,6 +40,7 @@ export function streamChat(
     onStage?: (message: string) => void
     onSql?: (sql: string, corrected?: boolean) => void
     onData?: (rows: Record<string, unknown>[], total: number, sessionId: number) => void
+    onVisualization?: (config: VisualizationConfig) => void
     onSummaryToken?: (token: string) => void
     onDone?: () => void
     onError?: (message: string) => void
@@ -86,6 +88,7 @@ export function streamChat(
             case 'stage':   handlers.onStage?.(payload.message); break
             case 'sql':     handlers.onSql?.(payload.sql, payload.corrected); break
             case 'data':    handlers.onData?.(payload.rows, payload.total, payload.sessionId); break
+            case 'visualization': handlers.onVisualization?.(payload.config); break
             case 'summary': handlers.onSummaryToken?.(payload.token); break
             case 'done':    handlers.onDone?.(); break
             case 'error':   handlers.onError?.(payload.message); break

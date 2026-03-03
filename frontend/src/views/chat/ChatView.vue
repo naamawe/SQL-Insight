@@ -6,6 +6,7 @@ import { dataSourceApi } from '@/api/datasource'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 import type { ChatMessage, DataSourceVO } from '@/types'
+import SmartResultRenderer from '@/components/visualization/SmartResultRenderer.vue'
 
 const authStore = useAuthStore()
 const chatStore = useChatStore()
@@ -87,6 +88,7 @@ async function loadHistory(sessionId: number) {
         total: r.rowTotal,
         recordId: r.id,
         resultExpired: r.resultExpired,
+        visualization: r.visualization ?? undefined,
       })
     }
     // 等待 DOM 更新和表格渲染完成后再滚动
@@ -108,6 +110,7 @@ async function rerunExpired(msg: ChatMessage) {
     const result: any = await chatApi.rerunRecord(msg.recordId)
     msg.tableData = result.data
     msg.total = result.total
+    msg.visualization = result.visualization ?? undefined
 
     // 流式显示文本
     const summary = result.summary || ''
@@ -178,6 +181,10 @@ async function sendMessage() {
         chatStore.selectSession(sessionId)
         chatStore.loadSessions()
       }
+      scrollToBottom()
+    },
+    onVisualization(config) {
+      aiMsg.visualization = config
       scrollToBottom()
     },
     onSummaryToken(token) { aiMsg.content += token; aiMsg.loading = false; scrollToBottom() },
@@ -339,10 +346,10 @@ function handleOutsideClick(e: MouseEvent) {
                   <pre v-if="expandedSql.has(msg.id)" class="sql-code">{{ msg.sql }}</pre>
                 </div>
                 <div v-if="msg.tableData && msg.tableData.length" class="result-table-wrap">
-                  <div class="result-meta">共 {{ msg.total }} 条结果</div>
-                  <el-table :data="msg.tableData" size="small" class="result-table" max-height="300">
-                    <el-table-column v-for="col in Object.keys(msg.tableData[0] || {})" :key="col" :prop="col" :label="col" min-width="100" show-overflow-tooltip />
-                  </el-table>
+                  <SmartResultRenderer
+                    :data="msg.tableData"
+                    :visualization="msg.visualization"
+                  />
                 </div>
                 <div v-else-if="msg.resultExpired && msg.sql" class="expired-hint">
                   数据已过期

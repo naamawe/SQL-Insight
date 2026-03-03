@@ -4,8 +4,12 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xhx.ai.service.NlFeedbackGenerator;
 import com.xhx.common.context.UserContext;
 import com.xhx.common.result.Result;
+import com.xhx.core.analyzer.DataCharacteristicsAnalyzer;
+import com.xhx.core.analyzer.VisualizationRecommender;
 import com.xhx.core.model.dto.SqlChatRequest;
 import com.xhx.ai.listener.ChatStreamListener;
+import com.xhx.core.model.dto.visualization.DataCharacteristics;
+import com.xhx.core.model.dto.visualization.VisualizationConfig;
 import com.xhx.core.model.vo.ChatRecordVO;
 import com.xhx.core.service.sql.*;
 import com.xhx.dal.entity.ChatSession;
@@ -41,6 +45,8 @@ public class SqlChatController {
     private final ChatRecordService   chatRecordService;
     private final SqlSecurityService  sqlSecurityService;
     private final NlFeedbackGenerator nlFeedbackGenerator;
+    private final DataCharacteristicsAnalyzer dataCharacteristicsAnalyzer;
+    private final VisualizationRecommender visualizationRecommender;
 
     /**
      * SSE 流式 AI 对话
@@ -184,13 +190,26 @@ public class SqlChatController {
         // 重新生成 AI 摘要
         String newSummary = nlFeedbackGenerator.generate(record.getQuestion(), record.getSqlText(), data);
 
-        // 缓存结果并更新摘要和行数
-        chatRecordService.cacheResult(recordId, data, newSummary);
+        // 重新生成可视化配置
+        VisualizationConfig visualizationConfig = null;
+        try {
+            DataCharacteristics characteristics = dataCharacteristicsAnalyzer.analyze(data);
+            visualizationConfig = visualizationRecommender.recommend(
+                    record.getQuestion(), characteristics, data, record.getSqlText());
+        } catch (Exception e) {
+            log.warn("[历史记录重执行] 可视化配置生成失败, recordId: {}", recordId, e);
+        }
+
+        // 缓存结果并更新摘要、行数和可视化配置
+        chatRecordService.cacheResult(recordId, data, newSummary, visualizationConfig);
 
         Map<String, Object> response = new HashMap<>();
         response.put("data", data);
         response.put("summary", newSummary);
         response.put("total", data.size());
+        if (visualizationConfig != null) {
+            response.put("visualization", visualizationConfig);
+        }
 
         return Result.success(response);
     }

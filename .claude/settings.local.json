@@ -9,7 +9,15 @@
       "Bash(npm run dev)",
       "Bash(xargs grep -l \"权限信息\")",
       "Bash(mvn clean install -DskipTests -T 4)",
-      "Bash(mvn clean compile -DskipTests -pl sql-insight-core -am)"
+      "Bash(mvn clean compile -DskipTests -pl sql-insight-core -am)",
+      "Bash(\"C:\\\\Users\\\\master\\\\IdeaProjects\\\\SQL-Insight\\\\frontend\\\\src\\\\components\\\\visualization\\\\ChartRenderer.vue\":*)",
+      "Bash(\"c:\\\\Users\\\\master\\\\IdeaProjects\\\\SQL-Insight\\\\backend\\\\sql-insight-dal\\\\src\\\\main\\\\resources\\\\db\\\\migration\\\\V1.1__add_visualization_config.sql\":*)",
+      "Bash(npm install echarts --save)",
+      "Bash(npm run build)",
+      "Bash(mvn clean install -DskipTests)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\master\\IdeaProjects\\SQL-Insight"
     ]
   }
 }

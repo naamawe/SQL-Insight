@@ -2,6 +2,8 @@
 // 全局通用类型定义
 // =============================================
 
+import type { VisualizationConfig } from './visualization'
+
 /** 后端统一响应结构 */
 export interface ApiResponse<T = unknown> {
   code: number
@@ -85,6 +87,8 @@ export interface ChatMessage {
   // 历史记录相关
   recordId?: number
   resultExpired?: boolean
+  // 可视化配置
+  visualization?: VisualizationConfig
 }
 
 /** 对话历史记录 */

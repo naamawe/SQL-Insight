@@ -1,5 +1,6 @@
 package com.xhx.core.service.sql;
 
+import com.xhx.core.model.dto.visualization.VisualizationConfig;
 import com.xhx.core.model.vo.ChatRecordVO;
 
 import java.util.List;
@@ -27,6 +28,17 @@ public interface ChatRecordService {
      * @param summary  AI 生成的摘要（可选，为 null 时不更新）
      */
     void cacheResult(Long recordId, List<Map<String, Object>> data, String summary);
+
+    /**
+     * 将查询结果和可视化配置缓存到 Redis
+     * 同时更新数据库中的 summary、rowTotal 和 visualizationConfig
+     *
+     * @param recordId 对话记录 ID
+     * @param data     完整查询结果
+     * @param summary  AI 生成的摘要（可选，为 null 时不更新）
+     * @param visualizationConfig 可视化配置（可选）
+     */
+    void cacheResult(Long recordId, List<Map<String, Object>> data, String summary, VisualizationConfig visualizationConfig);
 
     /**
      * 查询某个会话下的所有对话记录，附带 Redis 结果缓存状态

@@ -1,5 +1,6 @@
 package com.xhx.core.model.vo;
 
+import com.xhx.core.model.dto.visualization.VisualizationConfig;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -50,4 +51,9 @@ public class ChatRecordVO {
      * true 时前端显示"数据已过期，点击重新执行"
      */
     private Boolean resultExpired;
+
+    /**
+     * 可视化配置
+     */
+    private VisualizationConfig visualization;
 }
