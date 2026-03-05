@@ -232,8 +232,8 @@ onMounted(async () => {
                   <span class="all-tables-badge">全部可访问</span>
                 </template>
                 <template v-else>
-                  <span v-for="t in tableMap[ds.id].slice(0, 3)" :key="t" class="table-tag">{{ t }}</span>
-                  <span v-if="tableMap[ds.id].length > 3" class="table-more">+{{ tableMap[ds.id].length - 3 }} 个表</span>
+                  <span v-for="t in (tableMap[ds.id] || []).slice(0, 3)" :key="t" class="table-tag">{{ t }}</span>
+                  <span v-if="(tableMap[ds.id] || []).length > 3" class="table-more">+{{ (tableMap[ds.id] || []).length - 3 }} 个表</span>
                 </template>
               </div>
             </div>
@@ -286,8 +286,8 @@ onMounted(async () => {
 
         <div class="ds-modal-footer">
           <span class="ds-table-count" v-if="tableMap[activeDs.id]?.length">
-            共 <strong>{{ tableMap[activeDs.id].length }}</strong> 张授权表
-            <template v-if="dsSearch && filteredActiveTables.length !== tableMap[activeDs.id].length">
+            共 <strong>{{ (tableMap[activeDs.id] || []).length }}</strong> 张授权表
+            <template v-if="dsSearch && filteredActiveTables.length !== (tableMap[activeDs.id] || []).length">
               ，匹配 <strong>{{ filteredActiveTables.length }}</strong> 张
             </template>
           </span>

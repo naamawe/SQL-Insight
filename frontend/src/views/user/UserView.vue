@@ -256,7 +256,7 @@ const permissionMap: Record<string, { label: string; color: string }> = {
 
 onMounted(async () => {
   const [, roleList] = await Promise.all([fetchList(), roleApi.list()])
-  roles.value = roleList
+  roles.value = roleList ?? []
   nextTick(() => {
     if (tableBodyRef.value) {
       resizeObserver = new ResizeObserver(updateRowHeight)

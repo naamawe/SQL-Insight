@@ -90,7 +90,6 @@ async function handleBatchDelete() {
 type DialogMode = 'add' | 'edit'
 const dialogVisible = ref(false)
 const dialogMode = ref<DialogMode>('add')
-const formRef = ref()
 const submitting = ref(false)
 
 const defaultForm = (): DataSourceSaveDTO & { id?: number } => ({
@@ -101,15 +100,6 @@ const defaultForm = (): DataSourceSaveDTO & { id?: number } => ({
 const form = reactive(defaultForm())
 const dialogTitle = computed(() => dialogMode.value === 'add' ? '新增数据源' : '编辑数据源')
 
-const formRules = computed(() => ({
-  connName:     [{ required: true, message: '请输入连接名称', trigger: 'blur' }],
-  dbType:       [{ required: true, message: '请选择数据库类型', trigger: 'change' }],
-  host:         [{ required: true, message: '请输入主机地址', trigger: 'blur' }],
-  port:         [{ required: true, message: '请输入端口号', trigger: 'blur' }],
-  databaseName: [{ required: true, message: '请输入数据库名', trigger: 'blur' }],
-  username:     [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password:     [{ required: dialogMode.value === 'add', message: '请输入密码', trigger: 'blur' }],
-}))
 
 function openAdd() {
   dialogMode.value = 'add'

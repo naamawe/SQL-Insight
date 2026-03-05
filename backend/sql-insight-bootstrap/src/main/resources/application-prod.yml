@@ -14,21 +14,24 @@ spring:
 langchain4j:
   open-ai:
     chat-model:
-      base-url: https://api.deepseek.com
-      api-key: ${DEEPSEEK_API_KEY}
-      model-name: deepseek-chat
-    streaming-chat-model:
-      base-url: https://api.deepseek.com
+      base-url: ${DEEPSEEK_BASE_URL}
       api-key: ${DEEPSEEK_API_KEY}
       model-name: ${MODEL_NAME}
       temperature: 0.0
-      log-requests: true
-      log-responses: true
+    streaming-chat-model:
+      base-url: ${DEEPSEEK_BASE_URL}
+      api-key: ${DEEPSEEK_API_KEY}
+      model-name: ${MODEL_NAME}
+      temperature: 0.0
+      log-requests: false
+      log-responses: false
 aliyun:
   dashscope:
     api-key: ${DASH_SCOPE_API_KEY}
+    model: ${DASH_SCOPE_MODEL}
 qdrant:
   host: ${QDRANT_HOST}
   port: ${QDRANT_PORT}
+  collection-name: ${QDRANT_COLLECTION_NAME}
 ds:
   encrypt-key: ${DS_ENCRYPT_KEY}

@@ -1,15 +1,15 @@
-import axios, { type AxiosResponse } from 'axios'
+import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
 import type { ApiResponse } from '@/types'
 
-const http = axios.create({
+const instance = axios.create({
   baseURL: '/api',
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 })
 
 // ── 请求拦截器：自动注入 JWT Token ──────────────────────
-http.interceptors.request.use(
+instance.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token')
     if (token) {
@@ -20,8 +20,8 @@ http.interceptors.request.use(
   (error) => Promise.reject(error),
 )
 
-// ── 响应拦截器：统一处理错误 ─────────────────────────────
-http.interceptors.response.use(
+// ── 响应拦截器：统一处理错误，返回 data 字段 ─────────────
+instance.interceptors.response.use(
   (response: AxiosResponse<ApiResponse>) => {
     const { code, message, data } = response.data
 
@@ -29,7 +29,6 @@ http.interceptors.response.use(
       return data as any
     }
 
-    // 401：登录失效，跳转登录页（登录页本身不跳转，直接抛错由页面处理）
     if (code === 401) {
       if (!window.location.pathname.startsWith('/login')) {
         localStorage.removeItem('token')
@@ -39,7 +38,6 @@ http.interceptors.response.use(
       return Promise.reject(new Error(message))
     }
 
-    // 其他业务错误：Toast 提示
     ElMessage.error({ message: message || '请求失败', duration: 2000 })
     return Promise.reject(new Error(message))
   },
@@ -64,5 +62,21 @@ http.interceptors.response.use(
     return Promise.reject(error)
   },
 )
+
+// ── 类型正确的 wrapper，拦截器已解包 data，返回 Promise<T> ──
+const http = {
+  get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    return instance.get(url, config) as unknown as Promise<T>
+  },
+  post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    return instance.post(url, data, config) as unknown as Promise<T>
+  },
+  put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    return instance.put(url, data, config) as unknown as Promise<T>
+  },
+  delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    return instance.delete(url, config) as unknown as Promise<T>
+  },
+}
 
 export default http
