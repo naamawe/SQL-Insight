@@ -85,6 +85,9 @@ export interface ChatMessage {
   // 历史记录相关
   recordId?: number
   resultExpired?: boolean
+  // 图表配置
+  chartConfig?: ChartConfigDTO
+  aiChartConfig?: ChartConfigDTO // AI 推荐的原始配置
 }
 
 /** 对话历史记录 */
@@ -128,4 +131,12 @@ export interface QueryPolicy {
   allowSubquery: 0 | 1
   allowAggregation: 0 | 1
   maxLimit: number
+}
+
+/** 图表配置 */
+export interface ChartConfigDTO {
+  type: string
+  xAxis: string
+  yAxis: string[]
+  title: string
 }

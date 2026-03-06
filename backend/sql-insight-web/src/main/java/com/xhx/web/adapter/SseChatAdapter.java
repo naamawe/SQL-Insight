@@ -1,6 +1,7 @@
 package com.xhx.web.adapter;
 
 import com.xhx.ai.listener.ChatStreamListener;
+import com.xhx.ai.model.ChartConfigDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -37,6 +38,11 @@ public class SseChatAdapter implements ChatStreamListener {
     @Override
     public void onSummaryToken(String token) {
         send("summary", Map.of("token", token));
+    }
+
+    @Override
+    public void onChartConfig(ChartConfigDTO chartConfig) {
+        send("chart", Map.of("config", chartConfig));
     }
 
     @Override

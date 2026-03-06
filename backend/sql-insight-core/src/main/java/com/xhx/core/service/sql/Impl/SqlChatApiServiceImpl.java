@@ -1,9 +1,12 @@
 package com.xhx.core.service.sql.Impl;
 
 import com.xhx.ai.listener.ChatStreamListener;
+import com.xhx.ai.model.ChartConfigDTO;
 import com.xhx.ai.service.NlFeedbackGenerator;
 import com.xhx.common.util.CommonUtil;
+import com.xhx.core.service.chart.ChartConfigService;
 import com.xhx.core.service.sql.*;
+import com.xhx.dal.entity.ChartConfig;
 import com.xhx.dal.entity.ChatSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * @author master
@@ -26,6 +30,7 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
     private final ChatSessionService  chatSessionService;
     private final NlFeedbackGenerator nlFeedbackGenerator;
     private final ChatRecordService   chatRecordService;
+    private final ChartConfigService  chartConfigService;
 
     @Async("aiExecutor")
     @Override
@@ -54,59 +59,83 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
 
             // 执行 SQL，内部处理自动纠错，返回最终结果
             ExecuteResult result = executeWithRetry(userId, finalSessionId, dsId, sql, listener);
-            final List<Map<String, Object>> data    = result.data();
-            final String                   finalSql = result.finalSql();
-            final boolean                  corrected = result.corrected();
-            final Long                     capturedSessionId = finalSessionId;
+            final List<Map<String, Object>> data = result.data();
+            final String finalSql = result.finalSql();
+            final boolean corrected = result.corrected();
 
             listener.onData(data, finalSessionId);
 
-            // 收集流式摘要 token，完成后统一落库
+            // 先保存对话记录，获取 recordId
+            Long recordId = chatRecordService.save(
+                    finalSessionId, question, finalSql, data.size(), null, corrected);
+
+            // 使用 AtomicLong 传递 recordId 给内部监听器
+            final AtomicLong savedRecordId = new AtomicLong(recordId);
+            // 累积流式摘要
             final StringBuilder summaryBuffer = new StringBuilder();
 
-            nlFeedbackGenerator.generateStream(question, finalSql, data, new ChatStreamListener() {
-
+            // 创建内部监听器，拦截图表配置和完成事件
+            ChatStreamListener internalListener = new ChatStreamListener() {
                 @Override
                 public void onStage(String message) {
                     listener.onStage(message);
                 }
 
                 @Override
-                public void onSql(String s, boolean c) {
-                    listener.onSql(s, c);
+                public void onSql(String sql, boolean corrected) {
+                    listener.onSql(sql, corrected);
                 }
 
                 @Override
-                public void onData(List<Map<String, Object>> d, Long sid) {
-                    listener.onData(d, sid);
+                public void onData(List<Map<String, Object>> data, Long sessionId) {
+                    listener.onData(data, sessionId);
                 }
 
                 @Override
                 public void onSummaryToken(String token) {
-                    summaryBuffer.append(token); // 攒起来
+                    summaryBuffer.append(token); // 累积摘要
                     listener.onSummaryToken(token);
                 }
 
                 @Override
+                public void onChartConfig(ChartConfigDTO chartConfig) {
+                    // 推送给前端
+                    listener.onChartConfig(chartConfig);
+                    // 保存到数据库
+                    if (chartConfig != null) {
+                        saveChartConfig(savedRecordId.get(), chartConfig);
+                    }
+                }
+
+                @Override
                 public void onComplete() {
-                    // 摘要流结束，所有数据已就绪，统一落库 + 缓存结果
-                    saveRecord(capturedSessionId, question, finalSql,
-                            data, summaryBuffer.toString(), corrected);
+                    // 完成时更新缓存中的摘要，同时更新数据库中的 summary
+                    String summary = summaryBuffer.toString();
+                    chatRecordService.cacheResult(savedRecordId.get(), data, summary);
                     listener.onComplete();
                 }
 
                 @Override
                 public void onError(String message) {
-                    // 摘要生成失败，summary 为 null，其他数据仍然保存
-                    log.warn("流式摘要失败，仍保存对话记录: {}", message);
-                    saveRecord(capturedSessionId, question, finalSql,
-                            data, null, corrected);
-                    listener.onComplete(); // 静默降级，不暴露摘要错误给用户
+                    // 连接异常断开时，尝试保存已累积的摘要
+                    if (summaryBuffer.length() > 0) {
+                        try {
+                            String partialSummary = summaryBuffer.toString();
+                            chatRecordService.cacheResult(savedRecordId.get(), data, partialSummary);
+                            log.info("连接异常断开，已保存部分摘要，recordId: {}", savedRecordId.get());
+                        } catch (Exception e) {
+                            log.warn("异常断开时摘要保存失败：{}", e.getMessage());
+                        }
+                    }
+                    listener.onError(message);
                 }
-            });
+            };
+
+            // 调用流式生成
+            nlFeedbackGenerator.generateStream(question, finalSql, data, internalListener);
 
         } catch (Exception e) {
-            log.error("AI 业务流执行失败, sessionId: {}", finalSessionId, e);
+            log.error("AI 业务流执行失败，sessionId: {}", finalSessionId, e);
             listener.onError(e.getMessage());
             // 会话已建立但流程中断（如 SQL 安全校验拦截），仍保存一条错误记录
             if (finalSessionId != null) {
@@ -124,19 +153,28 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
         try {
             chatRecordService.save(sessionId, question, null, 0, errorMessage, false);
         } catch (Exception e) {
-            log.warn("拦截记录保存失败: {}", e.getMessage());
+            log.warn("拦截记录保存失败：{}", e.getMessage());
         }
     }
 
-    private void saveRecord(Long sessionId, String question, String sql,
-                            List<Map<String, Object>> data, String summary, boolean corrected) {
-        try {
-            Long recordId = chatRecordService.save(
-                    sessionId, question, sql, data.size(), summary, corrected);
-            chatRecordService.cacheResult(recordId, data, null);
-        } catch (Exception e) {
-            log.warn("对话记录保存失败，不影响用户体验: {}", e.getMessage());
+    /**
+     * 保存图表配置
+     */
+    private void saveChartConfig(Long recordId, ChartConfigDTO chartConfig) {
+        if (chartConfig == null) {
+            return;
         }
+
+        ChartConfig config = ChartConfig.builder()
+                .recordId(recordId)
+                .type(chartConfig.getType())
+                .xAxis(chartConfig.getXAxis())
+                .yAxis(chartConfig.getYAxis())
+                .title(chartConfig.getTitle())
+                .isUserModified(false)
+                .build();
+        chartConfigService.saveOrUpdate(config);
+        log.info("图表配置已保存，recordId: {}, type: {}", recordId, chartConfig.getType());
     }
 
     private Long resolveSessionId(Long userId, Long sessionId, Long dataSourceId, String question) {
@@ -160,7 +198,7 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
             return new ExecuteResult(data, sql, false);
 
         } catch (Exception firstError) {
-            log.warn("SQL 执行失败，启动修正: {}", firstError.getMessage());
+            log.warn("SQL 执行失败，启动修正：{}", firstError.getMessage());
             listener.onStage("执行出错，AI 正在自动修正...");
 
             String correctedSql = sqlGeneratorService.correct(

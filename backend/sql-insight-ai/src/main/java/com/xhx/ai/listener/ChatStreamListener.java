@@ -1,5 +1,7 @@
 package com.xhx.ai.listener;
 
+import com.xhx.ai.model.ChartConfigDTO;
+
 import java.util.List;
 import java.util.Map;
 
@@ -12,6 +14,7 @@ public interface ChatStreamListener {
     void onSql(String sql, boolean corrected);
     void onData(List<Map<String, Object>> data, Long sessionId);
     void onSummaryToken(String token);
+    void onChartConfig(ChartConfigDTO chartConfig);
     void onComplete();
     void onError(String message);
 }

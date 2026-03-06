@@ -8,6 +8,14 @@ export interface SqlChatRequest {
   question: string
 }
 
+/** 图表配置 */
+export interface ChartConfigDTO {
+  type: string
+  xAxis: string
+  yAxis: string[]
+  title: string
+}
+
 export const chatApi = {
   getSessions: (current = 1, size = 20) =>
     http.get<PageResult<ChatSession>>('/ai/sessions', { params: { current, size } }),
@@ -26,6 +34,16 @@ export const chatApi = {
 
   rerunRecord: (recordId: number) =>
     http.post<{ data: Record<string, unknown>[]; summary: string; total: number }>(`/ai/records/${recordId}/rerun`),
+
+  // 图表配置相关 API
+  getChartConfig: (recordId: number) =>
+    http.get<ChartConfigDTO | null>(`/chart/records/${recordId}`),
+
+  saveChartConfig: (recordId: number, config: ChartConfigDTO) =>
+    http.post<void>(`/chart/records/${recordId}`, config),
+
+  deleteChartConfig: (recordId: number) =>
+    http.delete<void>(`/chart/records/${recordId}`),
 }
 
 /**
@@ -40,6 +58,7 @@ export function streamChat(
     onSql?: (sql: string, corrected?: boolean) => void
     onData?: (rows: Record<string, unknown>[], total: number, sessionId: number) => void
     onSummaryToken?: (token: string) => void
+    onChart?: (config: ChartConfigDTO) => void
     onDone?: () => void
     onError?: (message: string) => void
   },
@@ -87,6 +106,7 @@ export function streamChat(
             case 'sql':     handlers.onSql?.(payload.sql, payload.corrected); break
             case 'data':    handlers.onData?.(payload.rows, payload.total, payload.sessionId); break
             case 'summary': handlers.onSummaryToken?.(payload.token); break
+            case 'chart':   handlers.onChart?.(payload.config); break
             case 'done':    handlers.onDone?.(); break
             case 'error':   handlers.onError?.(payload.message); break
           }

@@ -9,7 +9,9 @@
       "Bash(npm run dev)",
       "Bash(xargs grep -l \"权限信息\")",
       "Bash(mvn clean install -DskipTests -T 4)",
-      "Bash(mvn clean compile -DskipTests -pl sql-insight-core -am)"
+      "Bash(mvn clean compile -DskipTests -pl sql-insight-core -am)",
+      "WebFetch(domain:registry.npmjs.org)",
+      "Bash(npm install:*)"
     ]
   }
 }

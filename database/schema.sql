@@ -141,4 +141,39 @@ CREATE TABLE `user_data_source`  (
                                      PRIMARY KEY (`user_id`, `data_source_id`) USING BTREE
 ) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci ROW_FORMAT = DYNAMIC;
 
+-- ----------------------------
+-- Table structure for chart_config
+-- ----------------------------
+DROP TABLE IF EXISTS `chart_config`;
+CREATE TABLE `chart_config`  (
+    `id` bigint NOT NULL AUTO_INCREMENT,
+    `record_id` bigint NOT NULL COMMENT '关联查询记录ID',
+    `type` varchar(20) NOT NULL COMMENT '图表类型: bar/line/pie/scatter/table',
+    `x_axis` varchar(100) NULL DEFAULT NULL COMMENT 'X轴字段名',
+    `y_axis` json NULL DEFAULT NULL COMMENT 'Y轴字段名数组',
+    `title` varchar(200) NULL DEFAULT NULL COMMENT '图表标题',
+    `is_user_modified` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否用户手动修改过',
+    `gmt_created` datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    `gmt_modified` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`) USING BTREE,
+    UNIQUE INDEX `uk_record_id`(`record_id` ASC) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '图表配置表' ROW_FORMAT = DYNAMIC;
+
+-- ----------------------------
+-- Table structure for chat_record
+-- ----------------------------
+DROP TABLE IF EXISTS `chat_record`;
+CREATE TABLE `chat_record`  (
+    `id` bigint NOT NULL AUTO_INCREMENT,
+    `session_id` bigint NOT NULL COMMENT '关联会话ID',
+    `question` varchar(500) NOT NULL COMMENT '用户原始问题',
+    `sql_text` text NULL DEFAULT NULL COMMENT '执行的SQL',
+    `summary` varchar(500) NULL DEFAULT NULL COMMENT 'AI生成的摘要',
+    `row_total` int NULL DEFAULT 0 COMMENT '查询结果行数',
+    `corrected` tinyint(1) NULL DEFAULT 0 COMMENT '是否经过自动纠错',
+    `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`) USING BTREE,
+    INDEX `idx_session_id`(`session_id` ASC) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '对话记录表' ROW_FORMAT = DYNAMIC;
+
 SET FOREIGN_KEY_CHECKS = 1;

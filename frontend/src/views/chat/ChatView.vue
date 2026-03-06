@@ -5,7 +5,8 @@ import { streamChat, chatApi } from '@/api/chat'
 import { dataSourceApi } from '@/api/datasource'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
-import type { ChatMessage, DataSourceVO } from '@/types'
+import ChartView from '@/components/ChartView.vue'
+import type { ChatMessage, DataSourceVO, ChartConfigDTO } from '@/types'
 
 const authStore = useAuthStore()
 const chatStore = useChatStore()
@@ -77,7 +78,7 @@ async function loadHistory(sessionId: number) {
     const records = (await chatApi.getSessionRecords(sessionId)) as unknown as any[]
     for (const r of records) {
       messages.value.push({ id: `u-${r.id}`, role: 'user', content: r.question })
-      messages.value.push({
+      const aiMsg: ChatMessage = {
         id: `a-${r.id}`,
         role: 'ai',
         content: r.summary ?? '',
@@ -87,12 +88,33 @@ async function loadHistory(sessionId: number) {
         total: r.rowTotal,
         recordId: r.id,
         resultExpired: r.resultExpired,
-      })
+        chartConfig: undefined,
+        aiChartConfig: undefined,
+      }
+      messages.value.push(aiMsg)
+
+      // 异步加载图表配置
+      if (r.resultData && r.resultData.length > 0) {
+        loadChartConfigForMessage(aiMsg)
+      }
     }
     // 等待 DOM 更新和表格渲染完成后再滚动
     setTimeout(() => scrollToBottom(), 100)
   } finally {
     historyLoading.value = false
+  }
+}
+
+async function loadChartConfigForMessage(msg: ChatMessage) {
+  if (!msg.recordId) return
+  try {
+    const config = await chatApi.getChartConfig(msg.recordId) as unknown as ChartConfigDTO | null
+    if (config) {
+      msg.chartConfig = config
+      msg.aiChartConfig = config
+    }
+  } catch {
+    // 静默失败，不影响主流程
   }
 }
 
@@ -129,6 +151,17 @@ async function rerunExpired(msg: ChatMessage) {
   }
 }
 
+// ── 图表配置保存 ────────────────────────────────────────
+async function saveChartConfig(recordId: number, config: ChartConfigDTO) {
+  if (!recordId || !config) return
+  try {
+    await chatApi.saveChartConfig(recordId, config)
+    ElMessage.success({ message: '图表配置已保存', duration: 2000 })
+  } catch {
+    ElMessage.error({ message: '保存图表配置失败', duration: 2000 })
+  }
+}
+
 // ── 输入 ──────────────────────────────────────────────
 const question = ref('')
 const sending = ref(false)
@@ -157,7 +190,7 @@ async function sendMessage() {
   question.value = ''
   scrollToBottom()
 
-  const aiMsg: ChatMessage = { id: `a-${Date.now()}`, role: 'ai', content: '', loading: true, stage: '正在思考...' }
+  const aiMsg: ChatMessage = { id: `a-${Date.now()}`, role: 'ai', content: '', loading: true, stage: '正在思考...', chartConfig: undefined, aiChartConfig: undefined }
   messages.value.push(aiMsg)
   sending.value = true
   scrollToBottom()
@@ -181,6 +214,11 @@ async function sendMessage() {
       scrollToBottom()
     },
     onSummaryToken(token) { aiMsg.content += token; aiMsg.loading = false; scrollToBottom() },
+    onChart(config) {
+      aiMsg.aiChartConfig = config
+      aiMsg.chartConfig = config
+      scrollToBottom()
+    },
     onDone() { aiMsg.loading = false; aiMsg.stage = undefined; sending.value = false; abortCtrl = null; chatStore.loadSessions() },
     onError(msg) { aiMsg.loading = false; aiMsg.stage = undefined; aiMsg.content = msg; sending.value = false; abortCtrl = null },
   })
@@ -339,10 +377,13 @@ function handleOutsideClick(e: MouseEvent) {
                   <pre v-if="expandedSql.has(msg.id)" class="sql-code">{{ msg.sql }}</pre>
                 </div>
                 <div v-if="msg.tableData && msg.tableData.length" class="result-table-wrap">
-                  <div class="result-meta">共 {{ msg.total }} 条结果</div>
-                  <el-table :data="msg.tableData" size="small" class="result-table" max-height="300">
-                    <el-table-column v-for="col in Object.keys(msg.tableData[0] || {})" :key="col" :prop="col" :label="col" min-width="100" show-overflow-tooltip />
-                  </el-table>
+                  <ChartView
+                    :chart-config="msg.aiChartConfig || null"
+                    :table-data="msg.tableData"
+                    :record-id="msg.recordId || 0"
+                    @config-change="(config: ChartConfigDTO) => msg.chartConfig = config"
+                    @save-config="(config: ChartConfigDTO) => saveChartConfig(msg.recordId || 0, config)"
+                  />
                 </div>
                 <div v-else-if="msg.resultExpired && msg.sql" class="expired-hint">
                   数据已过期

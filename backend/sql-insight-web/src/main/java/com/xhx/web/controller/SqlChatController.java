@@ -8,6 +8,7 @@ import com.xhx.core.model.dto.SqlChatRequest;
 import com.xhx.ai.listener.ChatStreamListener;
 import com.xhx.core.model.vo.ChatRecordVO;
 import com.xhx.core.service.sql.*;
+import com.xhx.core.service.chart.ChartConfigService;
 import com.xhx.dal.entity.ChatSession;
 import com.xhx.core.model.vo.ChatSessionVO;
 import com.xhx.web.adapter.SseChatAdapter;
@@ -41,6 +42,7 @@ public class SqlChatController {
     private final ChatRecordService   chatRecordService;
     private final SqlSecurityService  sqlSecurityService;
     private final NlFeedbackGenerator nlFeedbackGenerator;
+    private final ChartConfigService  chartConfigService;
 
     /**
      * SSE 流式 AI 对话
@@ -181,11 +183,28 @@ public class SqlChatController {
         log.info("[历史记录重执行成功] userId: {}, recordId: {}, 原始行数: {}, 当前行数: {}",
                 userId, recordId, record.getRowTotal(), data.size());
 
-        // 重新生成 AI 摘要
-        String newSummary = nlFeedbackGenerator.generate(record.getQuestion(), record.getSqlText(), data);
+        // 重新生成 AI 摘要和图表配置
+        com.xhx.ai.model.FeedbackResponse feedbackResponse =
+                nlFeedbackGenerator.generateWithChart(record.getQuestion(), record.getSqlText(), data);
+        String newSummary = feedbackResponse != null ? feedbackResponse.getSummary() : "";
 
         // 缓存结果并更新摘要和行数
         chatRecordService.cacheResult(recordId, data, newSummary);
+
+        // 重新保存图表配置（如果 AI 返回了推荐）
+        if (feedbackResponse != null && feedbackResponse.getChart() != null) {
+            com.xhx.dal.entity.ChartConfig chartConfig = com.xhx.dal.entity.ChartConfig.builder()
+                    .recordId(recordId)
+                    .type(feedbackResponse.getChart().getType())
+                    .xAxis(feedbackResponse.getChart().getXAxis())
+                    .yAxis(feedbackResponse.getChart().getYAxis())
+                    .title(feedbackResponse.getChart().getTitle())
+                    .isUserModified(false)
+                    .build();
+            chartConfigService.saveOrUpdate(chartConfig);
+            log.info("[历史记录重执行] 图表配置已更新，recordId: {}, type: {}",
+                    recordId, feedbackResponse.getChart().getType());
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("data", data);

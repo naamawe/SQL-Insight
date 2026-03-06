@@ -1,6 +1,9 @@
 package com.xhx.ai.service;
 
+import com.alibaba.fastjson2.JSON;
 import com.xhx.ai.listener.ChatStreamListener;
+import com.xhx.ai.model.ChartConfigDTO;
+import com.xhx.ai.model.FeedbackResponse;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.StreamingResponseHandler;
@@ -9,15 +12,18 @@ import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.output.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 自然语言反馈生成器
  * <p>
- * 职责：在 SQL 执行完成后，用自然语言向用户描述查询结果。
+ * 职责：在 SQL 执行完成后，用自然语言向用户描述查询结果，并推荐图表配置。
  * <p>
  * 设计原则：
  *   - 使用独立的一次性对话，不写入 ChatMemory，不影响对话历史
@@ -37,25 +43,27 @@ public class NlFeedbackGenerator {
     /** 传给 AI 的最大样本行数，避免结果集过大导致 token 超限 */
     private static final int MAX_SAMPLE_ROWS = 5;
 
-    private static final String SYSTEM_PROMPT = """
-            你是一个数据库查询助手，擅长用简洁的自然语言描述 SQL 查询结果。
-            请根据用户的问题、执行的 SQL 和查询结果，用一句话总结查询结论。
-            要求：
-            1. 直接描述结论，不要说"根据查询结果"这类废话开头
-            2. 包含关键数字（如条数、金额、日期等）
-            3. 不超过 50 个字
-            4. 如果结果为空，说明未找到符合条件的数据
-            """;
+    private final String SYSTEM_PROMPT = loadPromptFromFile();
+
+    private static String loadPromptFromFile() {
+        try {
+            ClassPathResource resource = new ClassPathResource("prompts/nl_feedback_prompt.txt");
+            return resource.getContentAsString(StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            log.error("无法加载提示词文件：{}", "prompts/nl_feedback_prompt.txt", e);
+            throw new IllegalStateException("Failed to load prompt file: " + "prompts/nl_feedback_prompt.txt", e);
+        }
+    }
 
     /**
-     * 阻塞式生成摘要（用于 rerun 等同步场景）
+     * 阻塞式生成摘要和图表配置（用于 rerun 等同步场景）
      *
      * @param question 用户原始问题
      * @param sql      已执行的 SQL
      * @param data     查询结果集
-     * @return 生成的摘要文本，失败时返回空字符串
+     * @return FeedbackResponse 包含摘要和图表配置，失败时返回 null
      */
-    public String generate(String question, String sql, List<Map<String, Object>> data) {
+    public FeedbackResponse generateWithChart(String question, String sql, List<Map<String, Object>> data) {
         String userContent = buildUserContent(question, sql, data);
 
         try {
@@ -65,15 +73,24 @@ public class NlFeedbackGenerator {
                             UserMessage.from(userContent)
                     )
             );
-            return response.content().text();
+            String rawText = response.content().text();
+            return parseFeedbackResponse(rawText);
         } catch (Exception e) {
-            log.warn("阻塞式摘要生成异常: {}", e.getMessage());
-            return "";
+            log.warn("阻塞式摘要和图表生成异常：{}", e.getMessage());
+            return null;
         }
     }
 
     /**
-     * 流式生成摘要，通过监听器逐 token 推送结论。
+     * 阻塞式生成纯摘要（向后兼容）
+     */
+    public String generate(String question, String sql, List<Map<String, Object>> data) {
+        FeedbackResponse response = generateWithChart(question, sql, data);
+        return response != null ? response.getSummary() : "";
+    }
+
+    /**
+     * 流式生成摘要和图表配置
      * <p>
      * 设计意图：
      * - 采用非阻塞模式，利用 {@link StreamingChatLanguageModel} 异步驱动。
@@ -94,6 +111,9 @@ public class NlFeedbackGenerator {
                                List<Map<String, Object>> data, ChatStreamListener listener) {
         String userContent = buildUserContent(question, sql, data);
 
+        // 使用 StringBuilder 累积流式响应
+        final StringBuilder buffer = new StringBuilder();
+
         streamingChatLanguageModel.generate(
                 List.of(
                         SystemMessage.from(SYSTEM_PROMPT),
@@ -102,20 +122,28 @@ public class NlFeedbackGenerator {
                 new StreamingResponseHandler<>() {
                     @Override
                     public void onNext(String token) {
-                        // 通过监听器推送 token
+                        buffer.append(token);
                         listener.onSummaryToken(token);
                     }
 
                     @Override
                     public void onComplete(Response<dev.langchain4j.data.message.AiMessage> response) {
-                        // 告知监听器流程结束
+                        // 流式完成后，解析 JSON 并推送图表配置
+                        String rawText = buffer.toString();
+                        try {
+                            FeedbackResponse feedbackResponse = parseFeedbackResponse(rawText);
+                            if (feedbackResponse != null && feedbackResponse.getChart() != null) {
+                                listener.onChartConfig(feedbackResponse.getChart());
+                            }
+                        } catch (Exception e) {
+                            log.warn("图表配置解析失败：{}", e.getMessage());
+                        }
                         listener.onComplete();
                     }
 
                     @Override
                     public void onError(Throwable error) {
-                        log.warn("流式摘要生成失败，静默降级: {}", error.getMessage());
-                        // 即使报错，也推 complete，让前端关闭连接
+                        log.warn("流式摘要生成失败，静默降级：{}", error.getMessage());
                         listener.onComplete();
                     }
                 }
@@ -123,6 +151,32 @@ public class NlFeedbackGenerator {
     }
 
     // ==================== 私有工具方法 ====================
+
+    private FeedbackResponse parseFeedbackResponse(String rawText) {
+        try {
+            // 尝试提取 JSON（可能包含前后的废话）
+            String json = extractJson(rawText);
+            return JSON.parseObject(json, FeedbackResponse.class);
+        } catch (Exception e) {
+            log.warn("JSON 解析失败，原始响应：{}", rawText);
+            // 降级：只返回摘要
+            return FeedbackResponse.builder()
+                    .summary(rawText)
+                    .build();
+        }
+    }
+
+    /**
+     * 从文本中提取 JSON 对象
+     */
+    private String extractJson(String text) {
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return text.substring(start, end + 1);
+        }
+        return text;
+    }
 
     private String buildUserContent(String question, String sql, List<Map<String, Object>> data) {
         int totalRows = data.size();
