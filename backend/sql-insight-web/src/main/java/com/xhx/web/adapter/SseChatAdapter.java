@@ -31,8 +31,8 @@ public class SseChatAdapter implements ChatStreamListener {
     }
 
     @Override
-    public void onData(List<Map<String, Object>> data, Long sessionId) {
-        send("data", Map.of("rows", data, "total", data.size(), "sessionId", sessionId));
+    public void onData(List<Map<String, Object>> data, Long sessionId, Long recordId) {
+        send("data", Map.of("rows", data, "total", data.size(), "sessionId", sessionId, "recordId", recordId));
     }
 
     @Override

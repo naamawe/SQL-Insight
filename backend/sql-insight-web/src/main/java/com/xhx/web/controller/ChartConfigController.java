@@ -1,7 +1,7 @@
 package com.xhx.web.controller;
 
 import com.xhx.common.result.Result;
-import com.xhx.core.model.dto.ChartConfigDTO;
+import com.xhx.ai.model.ChartConfigDTO;
 import com.xhx.core.service.chart.ChartConfigService;
 import com.xhx.dal.entity.ChartConfig;
 import lombok.RequiredArgsConstructor;
@@ -45,16 +45,19 @@ public class ChartConfigController {
             @PathVariable Long recordId,
             @RequestBody ChartConfigDTO request) {
 
-        ChartConfig config = ChartConfig.builder()
+        // 查询已有记录，若存在则带上 id，走直接 updateById 路径（跳过 isUserModified 拦截）
+        ChartConfig.ChartConfigBuilder builder = ChartConfig.builder()
                 .recordId(recordId)
                 .type(request.getType())
                 .xAxis(request.getXAxis())
                 .yAxis(request.getYAxis())
                 .title(request.getTitle())
-                .isUserModified(true)
-                .build();
+                .isUserModified(true);
 
-        chartConfigService.saveOrUpdate(config);
+        chartConfigService.getByRecordId(recordId)
+                .ifPresent(existing -> builder.id(existing.getId()));
+
+        chartConfigService.saveOrUpdate(builder.build());
         return Result.success("图表配置已保存", null);
     }
 

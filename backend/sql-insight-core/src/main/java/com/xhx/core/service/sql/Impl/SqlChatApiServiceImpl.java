@@ -63,11 +63,11 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
             final String finalSql = result.finalSql();
             final boolean corrected = result.corrected();
 
-            listener.onData(data, finalSessionId);
-
             // 先保存对话记录，获取 recordId
             Long recordId = chatRecordService.save(
                     finalSessionId, question, finalSql, data.size(), null, corrected);
+
+            listener.onData(data, finalSessionId, recordId);
 
             // 使用 AtomicLong 传递 recordId 给内部监听器
             final AtomicLong savedRecordId = new AtomicLong(recordId);
@@ -87,8 +87,8 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
                 }
 
                 @Override
-                public void onData(List<Map<String, Object>> data, Long sessionId) {
-                    listener.onData(data, sessionId);
+                public void onData(List<Map<String, Object>> data, Long sessionId, Long recordId) {
+                    listener.onData(data, sessionId, recordId);
                 }
 
                 @Override

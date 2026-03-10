@@ -1,5 +1,5 @@
 import http from '@/utils/http'
-import type { ChatSession, ChatRecordVO } from '@/types'
+import type { ChatSession, ChatRecordVO, ChartConfigDTO } from '@/types'
 import type { PageResult } from '@/types'
 
 export interface SqlChatRequest {
@@ -8,13 +8,7 @@ export interface SqlChatRequest {
   question: string
 }
 
-/** 图表配置 */
-export interface ChartConfigDTO {
-  type: string
-  xAxis: string
-  yAxis: string[]
-  title: string
-}
+export type { ChartConfigDTO }
 
 export const chatApi = {
   getSessions: (current = 1, size = 20) =>
@@ -56,7 +50,7 @@ export function streamChat(
   handlers: {
     onStage?: (message: string) => void
     onSql?: (sql: string, corrected?: boolean) => void
-    onData?: (rows: Record<string, unknown>[], total: number, sessionId: number) => void
+    onData?: (rows: Record<string, unknown>[], total: number, sessionId: number, recordId: number) => void
     onSummaryToken?: (token: string) => void
     onChart?: (config: ChartConfigDTO) => void
     onDone?: () => void
@@ -104,7 +98,7 @@ export function streamChat(
           switch (eventType) {
             case 'stage':   handlers.onStage?.(payload.message); break
             case 'sql':     handlers.onSql?.(payload.sql, payload.corrected); break
-            case 'data':    handlers.onData?.(payload.rows, payload.total, payload.sessionId); break
+            case 'data':    handlers.onData?.(payload.rows, payload.total, payload.sessionId, payload.recordId); break
             case 'summary': handlers.onSummaryToken?.(payload.token); break
             case 'chart':   handlers.onChart?.(payload.config); break
             case 'done':    handlers.onDone?.(); break

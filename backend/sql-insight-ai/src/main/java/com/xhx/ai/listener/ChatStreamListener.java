@@ -12,7 +12,7 @@ import java.util.Map;
 public interface ChatStreamListener {
     void onStage(String message);
     void onSql(String sql, boolean corrected);
-    void onData(List<Map<String, Object>> data, Long sessionId);
+    void onData(List<Map<String, Object>> data, Long sessionId, Long recordId);
     void onSummaryToken(String token);
     void onChartConfig(ChartConfigDTO chartConfig);
     void onComplete();

@@ -78,6 +78,15 @@ async function loadHistory(sessionId: number) {
     const records = (await chatApi.getSessionRecords(sessionId)) as unknown as any[]
     for (const r of records) {
       messages.value.push({ id: `u-${r.id}`, role: 'user', content: r.question })
+      const rawChart = r.chartConfig
+      const rawCfg = Array.isArray(rawChart) ? rawChart[0] : rawChart
+      // 兼容后端字段名大小写（xaxis/yaxis 或 xAxis/yAxis）
+      const chartCfg = rawCfg ? {
+        type: rawCfg.type,
+        title: rawCfg.title,
+        xAxis: rawCfg.xAxis ?? rawCfg.xaxis,
+        yAxis: rawCfg.yAxis ?? rawCfg.yaxis,
+      } : undefined
       const aiMsg: ChatMessage = {
         id: `a-${r.id}`,
         role: 'ai',
@@ -88,33 +97,15 @@ async function loadHistory(sessionId: number) {
         total: r.rowTotal,
         recordId: r.id,
         resultExpired: r.resultExpired,
-        chartConfig: undefined,
-        aiChartConfig: undefined,
+        chartConfig: chartCfg,
+        aiChartConfig: chartCfg ?? undefined,
       }
       messages.value.push(aiMsg)
-
-      // 异步加载图表配置
-      if (r.resultData && r.resultData.length > 0) {
-        loadChartConfigForMessage(aiMsg)
-      }
     }
     // 等待 DOM 更新和表格渲染完成后再滚动
     setTimeout(() => scrollToBottom(), 100)
   } finally {
     historyLoading.value = false
-  }
-}
-
-async function loadChartConfigForMessage(msg: ChatMessage) {
-  if (!msg.recordId) return
-  try {
-    const config = await chatApi.getChartConfig(msg.recordId) as unknown as ChartConfigDTO | null
-    if (config) {
-      msg.chartConfig = config
-      msg.aiChartConfig = config
-    }
-  } catch {
-    // 静默失败，不影响主流程
   }
 }
 
@@ -204,9 +195,10 @@ async function sendMessage() {
   abortCtrl = streamChat(req, authStore.token, {
     onStage(msg) { aiMsg.stage = msg; scrollToBottom() },
     onSql(sql, corrected) { aiMsg.sql = sql; aiMsg.sqlCorrected = corrected; aiMsg.stage = undefined; scrollToBottom() },
-    onData(rows, total, sessionId) {
+    onData(rows, total, sessionId, recordId) {
       aiMsg.tableData = rows
       aiMsg.total = total
+      aiMsg.recordId = recordId
       if (!chatStore.currentSessionId) {
         chatStore.selectSession(sessionId)
         chatStore.loadSessions()
@@ -219,7 +211,17 @@ async function sendMessage() {
       aiMsg.chartConfig = config
       scrollToBottom()
     },
-    onDone() { aiMsg.loading = false; aiMsg.stage = undefined; sending.value = false; abortCtrl = null; chatStore.loadSessions() },
+    onDone() {
+      aiMsg.loading = false
+      aiMsg.stage = undefined
+      sending.value = false
+      abortCtrl = null
+      chatStore.loadSessions()
+      // AI 推荐的图表配置自动保存
+      if (aiMsg.recordId && aiMsg.aiChartConfig) {
+        chatApi.saveChartConfig(aiMsg.recordId, aiMsg.aiChartConfig).catch(() => {})
+      }
+    },
     onError(msg) { aiMsg.loading = false; aiMsg.stage = undefined; aiMsg.content = msg; sending.value = false; abortCtrl = null },
   })
 }
@@ -284,10 +286,11 @@ function handleOutsideClick(e: MouseEvent) {
 
       <!-- ── 空状态：居中欢迎屏 ── -->
       <Transition name="welcome">
-        <div v-if="historyLoading" class="history-loading">
-          <div class="loading-spinner" />
-        </div>
-        <div v-else-if="!messages.length && !chatStore.currentSessionId" class="welcome-screen">
+        <div v-if="historyLoading || (!messages.length && !chatStore.currentSessionId)" :key="messages.length === 0 ? 'empty' : 'has-msg'" class="welcome-screen">
+          <div v-if="historyLoading" class="history-loading-inner">
+            <div class="loading-spinner" />
+          </div>
+          <template v-else>
           <div class="welcome-logo">
             <svg width="44" height="44" viewBox="0 0 36 36" fill="none">
               <rect width="36" height="36" rx="10" fill="#D97706"/>
@@ -347,12 +350,12 @@ function handleOutsideClick(e: MouseEvent) {
               </div>
             </div>
           </div>
+          </template>
         </div>
       </Transition>
 
       <!-- ── 有消息时：正常对话布局 ── -->
-      <Transition name="chat">
-        <div v-if="messages.length" class="chat-content">
+        <div v-show="messages.length" class="chat-content">
           <!-- 消息列表 -->
           <div ref="msgListRef" class="msg-list">
             <div v-for="msg in messages" :key="msg.id" class="msg-row" :class="msg.role">
@@ -374,15 +377,15 @@ function handleOutsideClick(e: MouseEvent) {
                       <polyline points="6 9 12 15 18 9"/>
                     </svg>
                   </div>
-                  <pre v-if="expandedSql.has(msg.id)" class="sql-code">{{ msg.sql }}</pre>
+                  <pre class="sql-code" :class="{ expanded: expandedSql.has(msg.id) }">{{ msg.sql }}</pre>
                 </div>
                 <div v-if="msg.tableData && msg.tableData.length" class="result-table-wrap">
                   <ChartView
-                    :chart-config="msg.aiChartConfig || null"
+                    :chart-config="msg.chartConfig || msg.aiChartConfig || null"
                     :table-data="msg.tableData"
                     :record-id="msg.recordId || 0"
-                    @config-change="(config: ChartConfigDTO) => msg.chartConfig = config"
-                    @save-config="(config: ChartConfigDTO) => saveChartConfig(msg.recordId || 0, config)"
+                    @config-change="(config) => msg.chartConfig = config"
+                    @save-config="(config) => saveChartConfig(msg.recordId || 0, config)"
                   />
                 </div>
                 <div v-else-if="msg.resultExpired && msg.sql" class="expired-hint">
@@ -445,7 +448,6 @@ function handleOutsideClick(e: MouseEvent) {
           </div>
           </div>
         </div>
-      </Transition>
     </div>
   </div>
 </template>
@@ -466,12 +468,11 @@ function handleOutsideClick(e: MouseEvent) {
 }
 
 /* ── 历史加载中 ── */
-.history-loading {
-  position: absolute;
-  inset: 0;
+.history-loading-inner {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 40px 0;
 }
 .loading-spinner {
   width: 32px;
@@ -522,14 +523,6 @@ function handleOutsideClick(e: MouseEvent) {
   transform: translateY(-18px) scale(0.97);
 }
 
-/* ── 对话区过渡 ── */
-.chat-enter-active {
-  transition: opacity 0.3s ease 0.15s, transform 0.3s ease 0.15s;
-}
-.chat-enter-from {
-  opacity: 0;
-  transform: translateY(16px);
-}
 
 .welcome-logo { margin-bottom: 4px; }
 .welcome-title { font-size: 28px; font-weight: 600; color: var(--color-text-primary); letter-spacing: -0.5px; margin: 0; }
@@ -799,21 +792,30 @@ function handleOutsideClick(e: MouseEvent) {
 }
 
 .sql-code {
-  padding: 12px 14px;
+  padding: 0 14px;
   font-family: var(--font-mono);
   font-size: 12px;
   color: #e8e4de;
   background: var(--color-bg-code);
   overflow-x: auto;
+  overflow-y: hidden;
   margin: 0;
   white-space: pre;
   line-height: 1.6;
+  max-height: 0;
+  transition: max-height 0.2s ease, padding 0.2s ease;
+}
+
+.sql-code.expanded {
+  max-height: 300px;
+  padding: 12px 14px;
 }
 
 .result-table-wrap {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   overflow: hidden;
+  margin-top: 6px;
 }
 
 .result-meta {

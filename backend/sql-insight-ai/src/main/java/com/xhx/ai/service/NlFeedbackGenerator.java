@@ -2,11 +2,10 @@ package com.xhx.ai.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.xhx.ai.listener.ChatStreamListener;
-import com.xhx.ai.model.ChartConfigDTO;
 import com.xhx.ai.model.FeedbackResponse;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.model.StreamingResponseHandler;
+import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.output.Response;
@@ -37,13 +36,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class NlFeedbackGenerator {
 
-    private final StreamingChatLanguageModel streamingChatLanguageModel;
     private final ChatLanguageModel chatLanguageModel;
 
     /** 传给 AI 的最大样本行数，避免结果集过大导致 token 超限 */
     private static final int MAX_SAMPLE_ROWS = 5;
 
-    private final String SYSTEM_PROMPT = loadPromptFromFile();
+    private static final String SYSTEM_PROMPT = loadPromptFromFile();
 
     private static String loadPromptFromFile() {
         try {
@@ -67,7 +65,7 @@ public class NlFeedbackGenerator {
         String userContent = buildUserContent(question, sql, data);
 
         try {
-            Response<dev.langchain4j.data.message.AiMessage> response = chatLanguageModel.generate(
+            Response<AiMessage> response = chatLanguageModel.generate(
                     List.of(
                             SystemMessage.from(SYSTEM_PROMPT),
                             UserMessage.from(userContent)
@@ -109,45 +107,24 @@ public class NlFeedbackGenerator {
      */
     public void generateStream(String question, String sql,
                                List<Map<String, Object>> data, ChatStreamListener listener) {
-        String userContent = buildUserContent(question, sql, data);
-
-        // 使用 StringBuilder 累积流式响应
-        final StringBuilder buffer = new StringBuilder();
-
-        streamingChatLanguageModel.generate(
-                List.of(
-                        SystemMessage.from(SYSTEM_PROMPT),
-                        UserMessage.from(userContent)
-                ),
-                new StreamingResponseHandler<>() {
-                    @Override
-                    public void onNext(String token) {
-                        buffer.append(token);
-                        listener.onSummaryToken(token);
-                    }
-
-                    @Override
-                    public void onComplete(Response<dev.langchain4j.data.message.AiMessage> response) {
-                        // 流式完成后，解析 JSON 并推送图表配置
-                        String rawText = buffer.toString();
-                        try {
-                            FeedbackResponse feedbackResponse = parseFeedbackResponse(rawText);
-                            if (feedbackResponse != null && feedbackResponse.getChart() != null) {
-                                listener.onChartConfig(feedbackResponse.getChart());
-                            }
-                        } catch (Exception e) {
-                            log.warn("图表配置解析失败：{}", e.getMessage());
-                        }
-                        listener.onComplete();
-                    }
-
-                    @Override
-                    public void onError(Throwable error) {
-                        log.warn("流式摘要生成失败，静默降级：{}", error.getMessage());
-                        listener.onComplete();
+        try {
+            FeedbackResponse feedbackResponse = generateWithChart(question, sql, data);
+            if (feedbackResponse != null) {
+                String summary = feedbackResponse.getSummary();
+                if (summary != null && !summary.isBlank()) {
+                    // 逐字推送 summary，保持流式体验
+                    for (int i = 0; i < summary.length(); i++) {
+                        listener.onSummaryToken(String.valueOf(summary.charAt(i)));
                     }
                 }
-        );
+                if (feedbackResponse.getChart() != null) {
+                    listener.onChartConfig(feedbackResponse.getChart());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("摘要和图表生成失败，静默降级：{}", e.getMessage());
+        }
+        listener.onComplete();
     }
 
     // ==================== 私有工具方法 ====================
@@ -159,10 +136,7 @@ public class NlFeedbackGenerator {
             return JSON.parseObject(json, FeedbackResponse.class);
         } catch (Exception e) {
             log.warn("JSON 解析失败，原始响应：{}", rawText);
-            // 降级：只返回摘要
-            return FeedbackResponse.builder()
-                    .summary(rawText)
-                    .build();
+            return FeedbackResponse.builder().build();
         }
     }
 

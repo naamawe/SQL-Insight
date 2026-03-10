@@ -1,12 +1,15 @@
 package com.xhx.core.service.sql.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.xhx.ai.model.ChartConfigDTO;
 import com.xhx.common.exception.NotExistException;
 import com.xhx.core.model.vo.ChatRecordVO;
 import com.xhx.core.service.cache.CacheService;
+import com.xhx.core.service.chart.ChartConfigService;
 import com.xhx.core.service.sql.ChatRecordService;
 import com.xhx.core.service.sql.ChatSessionService;
 import com.xhx.dal.entity.ChatRecord;
+import com.xhx.dal.entity.ChartConfig;
 import com.xhx.dal.mapper.ChatRecordMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +31,7 @@ public class ChatRecordServiceImpl implements ChatRecordService {
     private final ChatRecordMapper   chatRecordMapper;
     private final CacheService       cacheService;
     private final ChatSessionService chatSessionService;
+    private final ChartConfigService chartConfigService;
 
     @Override
     public Long save(Long sessionId, String question, String sql,
@@ -118,6 +122,15 @@ public class ChatRecordServiceImpl implements ChatRecordService {
     private ChatRecordVO toVO(ChatRecord record, List<Map<String, Object>> resultData) {
         boolean hasCache = resultData != null;
 
+        ChartConfigDTO chartConfigDTO = chartConfigService.getByRecordId(record.getId())
+                .map(c -> ChartConfigDTO.builder()
+                        .type(c.getType())
+                        .xAxis(c.getXAxis())
+                        .yAxis(c.getYAxis())
+                        .title(c.getTitle())
+                        .build())
+                .orElse(null);
+
         return ChatRecordVO.builder()
                 .id(record.getId())
                 .sessionId(record.getSessionId())
@@ -129,6 +142,7 @@ public class ChatRecordServiceImpl implements ChatRecordService {
                 .createTime(record.getCreateTime())
                 .resultData(resultData)
                 .resultExpired(!hasCache)
+                .chartConfig(chartConfigDTO)
                 .build();
     }
 }

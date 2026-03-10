@@ -77,7 +77,7 @@ sql-insight-bootstrap    # Application entry point, Spring Boot main class
 
 **Dynamic DataSource Management**: `DynamicDataSourceManager` maintains a cache of HikariCP connection pools keyed by `dataSourceId`. When a DataSource configuration changes, the old pool is destroyed and recreated.
 
-**SSE Streaming Chat**: `SseChatAdapter` implements `ChatStreamListener` to push events via Server-Sent Events. The frontend `streamChat()` function parses these events (stage/sql/data/summary/done/error) in real-time.
+**SSE Streaming Chat**: `SseChatAdapter` implements `ChatStreamListener` to push events via Server-Sent Events. The frontend `streamChat()` function parses these events in real-time: `stage` (progress message), `sql` (generated SQL, with optional `corrected` flag), `data` (query rows + total + sessionId), `summary` (streaming token), `chart` (chart config), `done`, `error`. Uses raw `fetch` (not axios) because axios doesn't support streaming.
 
 **Role-Based Access Control**: Three roles with hierarchy: `SUPER_ADMIN > ADMIN > USER`. `SecurityConfig` defines the hierarchy; roles control visibility of menu items (frontend router) and API access (`@PreAuthorize`).
 
@@ -94,6 +94,15 @@ sql-insight-bootstrap    # Application entry point, Spring Boot main class
 **Route Guards**: `router/index.ts` checks authentication and role-based access. Routes declare required roles in `meta.roles`.
 
 **Auto-Import**: Vite plugins auto-import Vue/Router/Pinia APIs and Element Plus components. No manual imports needed for `ref`, `computed`, `useRouter`, etc.
+
+**HTTP Client**: `src/utils/http.ts` wraps axios. The response interceptor unwraps the `ApiResponse` envelope — callers receive `Promise<T>` (the `data` field directly), not the full response. 401 responses auto-redirect to `/login` and clear localStorage.
+
+**Auth Storage**: `token` and `userInfo` (JSON) are stored in `localStorage`, not only in Pinia. The router guard reads directly from `localStorage`, so both must stay in sync. Role is extracted from `userInfo.permissions` as the entry prefixed `ROLE_`.
+
+**Route Access by Role**:
+- `USER`: chat, profile
+- `ADMIN`: chat, datasource, permission, profile
+- `SUPER_ADMIN`: all routes including user and role management
 
 ## Key Files to Understand
 

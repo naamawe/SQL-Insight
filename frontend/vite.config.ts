@@ -26,6 +26,24 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  build: {
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/echarts') || id.includes('node_modules/zrender')) {
+            return 'echarts'
+          }
+          if (id.includes('node_modules/element-plus') || id.includes('node_modules/@element-plus')) {
+            return 'element-plus'
+          }
+          if (id.includes('node_modules/')) {
+            return 'vendor'
+          }
+        },
+      },
+    },
+  },
   server: {
     host: '127.0.0.1',
     port: 5173,
