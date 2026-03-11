@@ -179,9 +179,13 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
                 "- SELECT 语句必须包含行数限制，最大不超过 %d 行。\n", policy.getMaxLimit()));
         if (policy.getAllowJoin() == 0) {
             sb.append("- 禁止使用 JOIN 多表关联查询。\n");
+        } else {
+            sb.append("- 允许使用 JOIN 多表关联查询。\n");
         }
         if (policy.getAllowSubquery() == 0) {
             sb.append("- 禁止使用子查询。\n");
+        } else {
+            sb.append("- 允许使用子查询。\n");
         }
         if (policy.getAllowAggregation() == 0) {
             sb.append("- 禁止使用聚合函数（SUM、AVG、COUNT、GROUP BY）。\n");

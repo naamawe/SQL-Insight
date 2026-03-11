@@ -118,7 +118,7 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
                 @Override
                 public void onError(String message) {
                     // 连接异常断开时，尝试保存已累积的摘要
-                    if (summaryBuffer.length() > 0) {
+                    if (!summaryBuffer.isEmpty()) {
                         try {
                             String partialSummary = summaryBuffer.toString();
                             chatRecordService.cacheResult(savedRecordId.get(), data, partialSummary);
