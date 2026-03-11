@@ -243,7 +243,7 @@ function toggleSql(id: string) {
 
 // ── 初始化 ────────────────────────────────────────────
 onMounted(async () => {
-  const fetchDs = authStore.isAdmin ? dataSourceApi.list() : dataSourceApi.myList()
+  const fetchDs = dataSourceApi.myList()
   const [, dsList] = await Promise.all([chatStore.loadSessions(), fetchDs])
   dataSources.value = dsList as any
 
