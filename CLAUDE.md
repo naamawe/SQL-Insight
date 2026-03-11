@@ -79,6 +79,8 @@ sql-insight-bootstrap    # Application entry point, Spring Boot main class
 
 **SSE Streaming Chat**: `SseChatAdapter` implements `ChatStreamListener` to push events via Server-Sent Events. The frontend `streamChat()` function parses these events in real-time: `stage` (progress message), `sql` (generated SQL, with optional `corrected` flag), `data` (query rows + total + sessionId), `summary` (streaming token), `chart` (chart config), `done`, `error`. Uses raw `fetch` (not axios) because axios doesn't support streaming.
 
+**NL Feedback & Chart Config**: After SQL execution, `NlFeedbackGenerator` (in `sql-insight-ai`) makes a one-shot LLM call (not written to ChatMemory) using `nl_feedback_prompt.txt`. It returns a `FeedbackResponse` containing a natural language summary and a recommended `ChartConfigDTO`. The chart config is persisted via `ChartConfigService` (keyed by `recordId`) and sent to the frontend as the `chart` SSE event. `ChartView.vue` renders it using ECharts.
+
 **Role-Based Access Control**: Three roles with hierarchy: `SUPER_ADMIN > ADMIN > USER`. `SecurityConfig` defines the hierarchy; roles control visibility of menu items (frontend router) and API access (`@PreAuthorize`).
 
 **Permission Caching**: `CacheService` caches user permissions and role IDs. `PermissionLoader` loads permissions from cache or database. `RolePermissionChangedEvent` triggers cache eviction.

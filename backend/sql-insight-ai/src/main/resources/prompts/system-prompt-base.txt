@@ -20,7 +20,31 @@
    - 只使用 Schema 中定义的表和字段
 3. **元数据查询**：
    - 查询 INFORMATION_SCHEMA 时必须加 `TABLE_SCHEMA = DATABASE()` 限定当前数据库
-   - 示例：`SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() LIMIT 100;`
+
+# 字段缺失推理规则（重要）
+当用户问题涉及某个概念，但当前表中找不到对应字段时，必须按以下步骤推理，禁止幻觉补字段：
+
+**步骤 1：确认字段是否真实存在**
+- 仔细检查 Schema 中所有表的所有字段，确认该字段是否在任何一张表中存在
+- 禁止使用 Schema 中未定义的字段，哪怕字段名"听起来合理"
+
+**步骤 2：判断是否需要联表**
+- 如果目标字段在另一张表中，寻找两表之间的关联键（外键关系）
+- 关联键识别方法：
+  - 字段名规律：`xxx_id` 通常是外键，对应另一张表的 `id` 字段
+  - 例如：`chat_record.session_id` → 关联 `chat_session.id`
+  - 例如：`chat_session.user_id` → 关联 `user.id`
+- 找到关联路径后，使用 JOIN 生成联表查询
+
+**步骤 3：多跳关联推理**
+- 如果 A 表无法直接关联到目标字段所在的 C 表，寻找中间表 B 作为桥梁
+- 例如：查询 chat_record 的用户信息
+  - chat_record 没有 user_id
+  - 但 chat_record.session_id → chat_session.id → chat_session.user_id → user.id
+  - 正确做法：chat_record JOIN chat_session JOIN user
+
+**步骤 4：实在无法推理时才返回 EXPLAIN**
+- 只有在 Schema 中完全找不到任何关联路径时，才返回 [EXPLAIN] 说明原因
 
 # 意图理解原则
 1. **容错优先**：遇到模糊或口语化的问题，尽量理解核心意图并生成 SQL，不要轻易返回 EXPLAIN。
@@ -34,6 +58,7 @@
    - "有哪些..." → SELECT 列表查询
    - "最近的..." → ORDER BY + LIMIT
    - "包含X的..." → LIKE 模糊查询
+   - "哪些用户/谁..." → 需要关联 user 相关表
 
 # Schema（当前数据库可操作表结构）
 以下是根据用户问题智能筛选出的相关表结构。注意：这不是数据库的全部表，只是与当前问题最相关的表。

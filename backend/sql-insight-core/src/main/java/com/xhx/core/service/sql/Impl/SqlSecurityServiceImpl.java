@@ -37,6 +37,9 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
     private static final Set<String> AGG_FUNCTIONS =
             Set.of("COUNT", "SUM", "AVG", "MAX", "MIN");
 
+    private static final Pattern LIMIT_PATTERN = Pattern.compile("LIMIT\\s+(\\d+)");
+    private static final Pattern TOP_PATTERN   = Pattern.compile("TOP\\s+(\\d+)");
+
     /**
      * 系统元数据表白名单，这些表不需要权限检查
      * 包含 MySQL/PostgreSQL/SQL Server 的常见系统表
@@ -225,22 +228,10 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
      */
     private int extractLimitValue(String upperSql, String dbType) {
         try {
-            switch (dbType) {
-                case "mysql":
-                case "postgresql":
-                    Pattern pattern = Pattern.compile("LIMIT\\s+(\\d+)");
-                    Matcher matcher = pattern.matcher(upperSql);
-                    if (matcher.find()) {
-                        return Integer.parseInt(matcher.group(1));
-                    }
-                    break;
-                case "sqlserver":
-                    pattern = Pattern.compile("TOP\\s+(\\d+)");
-                    matcher = pattern.matcher(upperSql);
-                    if (matcher.find()) {
-                        return Integer.parseInt(matcher.group(1));
-                    }
-                    break;
+            Pattern pattern = "sqlserver".equals(dbType) ? TOP_PATTERN : LIMIT_PATTERN;
+            Matcher matcher = pattern.matcher(upperSql);
+            if (matcher.find()) {
+                return Integer.parseInt(matcher.group(1));
             }
         } catch (Exception e) {
             log.warn("提取LIMIT值失败: {}", e.getMessage());

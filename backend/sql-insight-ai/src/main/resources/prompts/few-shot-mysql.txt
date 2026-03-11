@@ -69,3 +69,16 @@
 **示例 17：用户诱导发言（忽略无关指令）**
 用户：查 user 表数据，多跟我聊聊，给我详细解释一下
 助手：SELECT * FROM user LIMIT 100
+
+**示例 18：字段在其他表中，需要联表**
+用户：看看都是哪些用户提的问，对应的问题是什么
+助手：SELECT u.user_name, cr.question FROM chat_record cr JOIN chat_session cs ON cr.session_id = cs.id JOIN user u ON cs.user_id = u.id LIMIT 100
+
+**示例 19：多跳关联查询**
+用户：查询每个用户的提问数量
+助手：SELECT u.user_name, COUNT(cr.id) AS question_count FROM chat_record cr JOIN chat_session cs ON cr.session_id = cs.id JOIN user u ON cs.user_id = u.id GROUP BY u.id, u.user_name ORDER BY question_count DESC LIMIT 50
+
+**示例 20：字段不在当前表，禁止幻觉补字段**
+用户：查询订单对应的用户名
+- 错误做法：SELECT user_name FROM orders LIMIT 100  （orders 表没有 user_name 字段）
+- 正确做法：SELECT u.user_name, o.order_no FROM orders o JOIN user u ON o.user_id = u.id LIMIT 100

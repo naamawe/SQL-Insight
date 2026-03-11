@@ -40,7 +40,7 @@ public class SchemaCollectorServiceImpl implements SchemaCollectorService {
         }
 
         List<String> sortedTables = allowedTables.stream().sorted().toList();
-        String permHash = Integer.toHexString(sortedTables.hashCode());
+        String permHash = dsConfig.getId() + ":" + String.join(",", sortedTables);
 
         List<TableMetadata> cached = cacheService.getSchemaMetadata(dsConfig.getId(), permHash);
         if (cached != null) {

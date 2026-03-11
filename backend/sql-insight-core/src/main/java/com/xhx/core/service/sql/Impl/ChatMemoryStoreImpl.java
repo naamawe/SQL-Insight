@@ -53,7 +53,7 @@ public class ChatMemoryStoreImpl implements ChatMemoryStore {
             } else {
                 return AiMessage.from(entity.getContent());
             }
-        }).collect(Collectors.toList());
+        }).toList();
     }
 
     /**

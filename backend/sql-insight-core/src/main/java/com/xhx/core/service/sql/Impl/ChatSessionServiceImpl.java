@@ -110,27 +110,9 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteSession(Long userId, Long sessionId) {
-        // 防止越权
         getSessionDetail(userId, sessionId);
-
-        List<Long> recordIds = chatRecordMapper.selectList(
-                new LambdaQueryWrapper<ChatRecord>()
-                        .select(ChatRecord::getId)
-                        .eq(ChatRecord::getSessionId, sessionId)
-        ).stream().map(ChatRecord::getId).toList();
-
-        chatMessageMapper.delete(new LambdaQueryWrapper<ChatMessageEntity>()
-                .eq(ChatMessageEntity::getSessionId, sessionId));
-
-        chatRecordMapper.delete(new LambdaQueryWrapper<ChatRecord>()
-                .eq(ChatRecord::getSessionId, sessionId));
-
-        chatSessionMapper.deleteById(sessionId);
-
-        cacheService.evictQueryResults(recordIds);
-
-        log.info("==> 会话 {} 已删除，清理了 {} 条记录的查询结果缓存",
-                sessionId, recordIds.size());
+        deleteSessionsInternal(List.of(sessionId));
+        log.info("==> 会话 {} 已删除", sessionId);
     }
 
     @Override
@@ -140,7 +122,6 @@ public class ChatSessionServiceImpl implements ChatSessionService {
             return;
         }
 
-        // 防止越权，只处理属于当前用户的会话
         List<Long> ownedSessionIds = chatSessionMapper.selectList(
                 new LambdaQueryWrapper<ChatSession>()
                         .select(ChatSession::getId)
@@ -152,25 +133,25 @@ public class ChatSessionServiceImpl implements ChatSessionService {
             return;
         }
 
+        deleteSessionsInternal(ownedSessionIds);
+        log.info("==> 批量删除会话成功，userId: {}，共删除 {} 个会话", userId, ownedSessionIds.size());
+    }
+
+    private void deleteSessionsInternal(List<Long> sessionIds) {
         List<Long> recordIds = chatRecordMapper.selectList(
                 new LambdaQueryWrapper<ChatRecord>()
                         .select(ChatRecord::getId)
-                        .in(ChatRecord::getSessionId, ownedSessionIds)
+                        .in(ChatRecord::getSessionId, sessionIds)
         ).stream().map(ChatRecord::getId).toList();
 
-        chatSessionMapper.delete(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getUserId, userId)
-                .in(ChatSession::getId, ownedSessionIds));
-
         chatMessageMapper.delete(new LambdaQueryWrapper<ChatMessageEntity>()
-                .in(ChatMessageEntity::getSessionId, ownedSessionIds));
-
+                .in(ChatMessageEntity::getSessionId, sessionIds));
         chatRecordMapper.delete(new LambdaQueryWrapper<ChatRecord>()
-                .in(ChatRecord::getSessionId, ownedSessionIds));
+                .in(ChatRecord::getSessionId, sessionIds));
+        chatSessionMapper.delete(new LambdaQueryWrapper<ChatSession>()
+                .in(ChatSession::getId, sessionIds));
 
         cacheService.evictQueryResults(recordIds);
-
-        log.info("==> 批量删除会话成功，userId: {}，共删除 {} 个会话，清理了 {} 条记录的查询结果缓存",
-                userId, ownedSessionIds.size(), recordIds.size());
+        log.info("==> 清理了 {} 条记录的查询结果缓存", recordIds.size());
     }
 }

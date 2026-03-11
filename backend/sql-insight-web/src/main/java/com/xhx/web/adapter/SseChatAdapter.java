@@ -60,7 +60,9 @@ public class SseChatAdapter implements ChatStreamListener {
         try {
             send("error", Map.of("message", message));
             emitter.complete();
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            log.warn("SSE error send failed: {}", e.getMessage());
+        }
     }
 
     private void send(String eventName, Object data) {

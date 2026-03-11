@@ -45,11 +45,10 @@ public class VectorSchemaLinker implements SchemaLinker {
         try {
             return doVectorLink(question, dataSourceId, candidates);
         } catch (TimeoutException e) {
-            log.warn("[VectorLinker] Qdrant 检索超时 ({}s)，降级关键词匹配", TIMEOUT_SECONDS);
-            return keywordFallback.link(question, dataSourceId, candidates);
+            return fallback("Qdrant 检索超时 (" + TIMEOUT_SECONDS + "s)", question, dataSourceId, candidates);
         } catch (Exception e) {
-            log.error("[VectorLinker] 向量检索异常，降级关键词匹配: {}", e.getMessage());
-            return keywordFallback.link(question, dataSourceId, candidates);
+            log.error("[VectorLinker] 向量检索异常: {}", e.getMessage());
+            return fallback("向量检索异常", question, dataSourceId, candidates);
         }
     }
 
@@ -69,29 +68,34 @@ public class VectorSchemaLinker implements SchemaLinker {
                 .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         log.debug("[VectorLinker] Qdrant 返回 {} 个命中点，dsId: {}", hits.size(), dataSourceId);
+        log.debug("[VectorLinker] 命中点分数: {}", hits.stream().map(Points.ScoredPoint::getScore).toList());
 
         // 向量无命中 → 降级关键词匹配
         if (hits.isEmpty()) {
-            log.info("[VectorLinker] 向量检索无结果（阈值 {}），降级关键词匹配", SIMILARITY_THRESHOLD);
-            return keywordFallback.link(question, dataSourceId, candidates);
+            return fallback("向量检索无结果（阈值 " + SIMILARITY_THRESHOLD + "）", question, dataSourceId, candidates);
         }
 
         List<TableMetadata> result = hits.stream()
                 .map(hit -> hit.getPayloadMap().get("table_name").getStringValue())
                 .map(candidateMap::get)
                 .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+                .toList();
 
         // 交集为空（全被权限过滤）→ 降级关键词匹配
         if (result.isEmpty()) {
-            log.warn("[VectorLinker] 向量命中的表均不在用户权限范围内，降级关键词匹配");
-            return keywordFallback.link(question, dataSourceId, candidates);
+            return fallback("向量命中的表均不在用户权限范围内", question, dataSourceId, candidates);
         }
 
         log.info("[VectorLinker] 完成：候选 {} 张 → 向量命中 {} 张 → 最终输出 {} 张",
                 candidates.size(), hits.size(), result.size());
 
         return result;
+    }
+
+    private List<TableMetadata> fallback(String reason, String question, Long dataSourceId,
+                                         List<TableMetadata> candidates) {
+        log.info("[VectorLinker] {}，降级关键词匹配", reason);
+        return keywordFallback.link(question, dataSourceId, candidates);
     }
     /**
      * 构建 Qdrant 检索请求

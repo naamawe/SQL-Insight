@@ -1,6 +1,7 @@
 package com.xhx.core.service.sql.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.xhx.ai.model.ChartConfigDTO;
 import com.xhx.common.exception.NotExistException;
 import com.xhx.core.model.vo.ChatRecordVO;
@@ -9,7 +10,6 @@ import com.xhx.core.service.chart.ChartConfigService;
 import com.xhx.core.service.sql.ChatRecordService;
 import com.xhx.core.service.sql.ChatSessionService;
 import com.xhx.dal.entity.ChatRecord;
-import com.xhx.dal.entity.ChartConfig;
 import com.xhx.dal.mapper.ChatRecordMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,15 +55,12 @@ public class ChatRecordServiceImpl implements ChatRecordService {
         try {
             cacheService.putQueryResult(recordId, data);
 
-            // 如果提供了新的摘要，同时更新数据库中的 summary 和 rowTotal
             if (summary != null) {
-                ChatRecord record = chatRecordMapper.selectById(recordId);
-                if (record != null) {
-                    record.setSummary(summary);
-                    record.setRowTotal(data.size());
-                    chatRecordMapper.updateById(record);
-                    log.info("对话记录已更新，recordId: {}，新行数: {}，摘要已刷新", recordId, data.size());
-                }
+                chatRecordMapper.update(new LambdaUpdateWrapper<ChatRecord>()
+                        .eq(ChatRecord::getId, recordId)
+                        .set(ChatRecord::getSummary, summary)
+                        .set(ChatRecord::getRowTotal, data.size()));
+                log.info("对话记录已更新，recordId: {}，新行数: {}，摘要已刷新", recordId, data.size());
             }
         } catch (Exception e) {
             log.warn("查询结果缓存失败，recordId: {}，原因: {}", recordId, e.getMessage());

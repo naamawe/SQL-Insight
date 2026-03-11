@@ -62,7 +62,7 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
     }
 
     @Override
-    public String correct(Long userId, Long sessionId, String errorMessage, String wrongSql) {
+    public AiResponse correct(Long userId, Long sessionId, String errorMessage, String wrongSql) {
         ChatSession session = requireSession(userId, sessionId);
         DataSource dsConfig = requireDataSource(session.getDataSourceId());
 
@@ -77,7 +77,7 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
             validateSql(response.cleanSql(), userId, session.getDataSourceId());
         }
 
-        return response.cleanSql();
+        return response;
     }
 
     // ==================== 私有方法 ====================
@@ -174,25 +174,17 @@ public class SqlGeneratorServiceImpl implements SqlGeneratorService {
         if (policy == null) {
             return "请生成标准的 SQL。";
         }
-        StringBuilder sb = new StringBuilder("必须严格遵守以下查询约束：\n");
-        sb.append(String.format(
-                "- SELECT 语句必须包含行数限制，最大不超过 %d 行。\n", policy.getMaxLimit()));
-        if (policy.getAllowJoin() == 0) {
-            sb.append("- 禁止使用 JOIN 多表关联查询。\n");
-        } else {
-            sb.append("- 允许使用 JOIN 多表关联查询。\n");
-        }
-        if (policy.getAllowSubquery() == 0) {
-            sb.append("- 禁止使用子查询。\n");
-        } else {
-            sb.append("- 允许使用子查询。\n");
-        }
-        if (policy.getAllowAggregation() == 0) {
-            sb.append("- 禁止使用聚合函数（SUM、AVG、COUNT、GROUP BY）。\n");
-        } else {
-            sb.append("- 允许使用聚合函数进行统计分析。\n");
-        }
-        return sb.toString();
+        return "必须严格遵守以下查询约束：\n" + String.format(
+                "- SELECT 语句必须包含行数限制，最大不超过 %d 行。\n", policy.getMaxLimit()) +
+                (policy.getAllowJoin() == 0
+                        ? "- 禁止使用 JOIN 多表关联查询。\n"
+                        : "- 允许使用 JOIN 多表关联查询。\n") +
+                (policy.getAllowSubquery() == 0
+                        ? "- 禁止使用子查询。\n"
+                        : "- 允许使用子查询。\n") +
+                (policy.getAllowAggregation() == 0
+                        ? "- 禁止使用聚合函数（SUM、AVG、COUNT、GROUP BY）。\n"
+                        : "- 允许使用聚合函数进行统计分析。\n");
     }
 
 

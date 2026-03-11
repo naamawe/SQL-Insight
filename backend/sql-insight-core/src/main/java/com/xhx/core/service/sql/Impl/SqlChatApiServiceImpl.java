@@ -1,6 +1,7 @@
 package com.xhx.core.service.sql.Impl;
 
 import com.xhx.ai.listener.ChatStreamListener;
+import com.xhx.ai.model.AiResponse;
 import com.xhx.ai.model.ChartConfigDTO;
 import com.xhx.ai.service.NlFeedbackGenerator;
 import com.xhx.common.util.CommonUtil;
@@ -57,8 +58,12 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
 
             listener.onSql(sql, false);
 
-            // 执行 SQL，内部处理自动纠错，返回最终结果
+            // 执行 SQL，内部处理自动纠错；null 表示纠错后 AI 返回 EXPLAIN，流程已在内部结束
             ExecuteResult result = executeWithRetry(userId, finalSessionId, dsId, sql, listener);
+            if (result == null) {
+                saveBlockedRecord(finalSessionId, question, "SQL 自动修正后仍无法执行");
+                return;
+            }
             final List<Map<String, Object>> data = result.data();
             final String finalSql = result.finalSql();
             final boolean corrected = result.corrected();
@@ -188,7 +193,8 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
     }
 
     /**
-     * 执行 SQL，失败时触发一次 Self-correction，返回最终结果和元信息
+     * 执行 SQL，失败时触发一次 Self-correction，返回最终结果和元信息。
+     * 若纠错后 AI 返回 EXPLAIN（无法修正），直接推送解释文本并结束流程，返回 null。
      */
     private ExecuteResult executeWithRetry(Long userId, Long sessionId, Long dsId,
                                            String sql, ChatStreamListener listener) {
@@ -201,13 +207,21 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
             log.warn("SQL 执行失败，启动修正：{}", firstError.getMessage());
             listener.onStage("执行出错，AI 正在自动修正...");
 
-            String correctedSql = sqlGeneratorService.correct(
+            AiResponse correction = sqlGeneratorService.correct(
                     userId, sessionId, firstError.getMessage(), sql);
-            listener.onSql(correctedSql, true);
 
+            if (correction.isExplain()) {
+                String explainText = correction.cleanSql().replace("[EXPLAIN]", "").trim();
+                listener.onStage("AI 提示");
+                listener.onSummaryToken(explainText);
+                listener.onComplete();
+                return null;
+            }
+
+            listener.onSql(correction.cleanSql(), true);
             listener.onStage("修正后 SQL 执行中...");
-            List<Map<String, Object>> data = sqlExecutorService.execute(dsId, correctedSql);
-            return new ExecuteResult(data, correctedSql, true);
+            List<Map<String, Object>> data = sqlExecutorService.execute(dsId, correction.cleanSql());
+            return new ExecuteResult(data, correction.cleanSql(), true);
         }
     }
 
