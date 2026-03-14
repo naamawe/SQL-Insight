@@ -62,6 +62,7 @@ export interface ChatSession {
   dataSourceName: string
   title: string
   createTime: string
+  _key?: number  // 稳定 key，临时会话用，防止替换 id 时触发动画
 }
 
 /** SSE 聊天请求 */

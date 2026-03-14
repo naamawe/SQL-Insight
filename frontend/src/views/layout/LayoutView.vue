@@ -174,7 +174,7 @@ async function confirmLogout() {
           <TransitionGroup tag="div" name="session-item" class="session-list">
             <div
               v-for="s in chatStore.sessions"
-              :key="s.id"
+              :key="s._key ?? s.id"
               class="session-item"
               :class="{ active: chatStore.currentSessionId === s.id && isChat }"
               @click="handleSelectSession(s)"
@@ -533,7 +533,7 @@ async function confirmLogout() {
   padding-top: 8px;
   display: flex;
   flex-direction: column;
-  max-height: 320px;
+  flex: 1;
   min-height: 0;
   opacity: 1;
   visibility: visible;

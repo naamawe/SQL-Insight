@@ -102,8 +102,26 @@ async function loadHistory(sessionId: number) {
       }
       messages.value.push(aiMsg)
     }
-    // 等待 DOM 更新和表格渲染完成后再滚动
-    setTimeout(() => scrollToBottom(), 100)
+    // 先跳到顶部，再快速滑到底部，模拟 ChatGPT 的切换动画
+    setTimeout(() => {
+      if (!msgListRef.value) return
+      const el = msgListRef.value
+      el.scrollTop = 0
+      setTimeout(() => {
+        const target = el.scrollHeight
+        const duration = 1500
+        const start = performance.now()
+        function step(now: number) {
+          const elapsed = now - start
+          const progress = Math.min(elapsed / duration, 1)
+          // easeOutQuint：快速开始，后半段大幅减速到0
+          const ease = 1 - Math.pow(1 - progress, 6)
+          el.scrollTop = ease * target
+          if (progress < 1) requestAnimationFrame(step)
+        }
+        requestAnimationFrame(step)
+      }, 30)
+    }, 100)
   } finally {
     historyLoading.value = false
   }
@@ -129,7 +147,6 @@ async function rerunExpired(msg: ChatMessage) {
       if (index < summary.length) {
         msg.content += summary[index]
         index++
-        scrollToBottom()
       } else {
         clearInterval(interval)
         msg.loading = false
@@ -186,10 +203,26 @@ async function sendMessage() {
   sending.value = true
   scrollToBottom()
 
+  const isNewSession = !chatStore.currentSessionId
   const req = {
     question: q,
     sessionId: chatStore.currentSessionId ?? undefined,
     dataSourceId: currentDataSourceId.value ?? undefined,
+  }
+
+  // 新会话：立即插入临时占位，让侧边栏马上显示
+  const tempKey = -Date.now()
+  if (isNewSession) {
+    const dsName = dataSources.value.find(d => d.id === currentDataSourceId.value)?.connName ?? ''
+    chatStore.sessions.unshift({
+      id: tempKey,
+      _key: tempKey,
+      title: q.length > 20 ? q.slice(0, 20) + '...' : q,
+      dataSourceId: currentDataSourceId.value!,
+      dataSourceName: dsName,
+      createTime: new Date().toISOString(),
+    } as any)
+    chatStore.selectSession(tempKey)
   }
 
   abortCtrl = streamChat(req, authStore.token, {
@@ -199,9 +232,11 @@ async function sendMessage() {
       aiMsg.tableData = rows
       aiMsg.total = total
       aiMsg.recordId = recordId
-      if (!chatStore.currentSessionId) {
+      if (isNewSession) {
+        // 用真实 sessionId 替换临时占位，保留 _key 不变避免触发动画
+        const idx = chatStore.sessions.findIndex(s => s._key === tempKey)
+        if (idx !== -1) chatStore.sessions[idx].id = sessionId
         chatStore.selectSession(sessionId)
-        chatStore.loadSessions()
       }
       scrollToBottom()
     },
@@ -216,13 +251,20 @@ async function sendMessage() {
       aiMsg.stage = undefined
       sending.value = false
       abortCtrl = null
-      chatStore.loadSessions()
       // AI 推荐的图表配置自动保存
       if (aiMsg.recordId && aiMsg.aiChartConfig) {
         chatApi.saveChartConfig(aiMsg.recordId, aiMsg.aiChartConfig).catch(() => {})
       }
     },
-    onError(msg) { aiMsg.loading = false; aiMsg.stage = undefined; aiMsg.content = msg; sending.value = false; abortCtrl = null },
+    onError(msg) {
+      aiMsg.loading = false; aiMsg.stage = undefined; aiMsg.content = msg; sending.value = false; abortCtrl = null
+      // 新会话失败时移除临时占位
+      if (isNewSession) {
+        const idx = chatStore.sessions.findIndex(s => s._key === tempKey)
+        if (idx !== -1) chatStore.sessions.splice(idx, 1)
+        chatStore.startNew()
+      }
+    },
   })
 }
 
