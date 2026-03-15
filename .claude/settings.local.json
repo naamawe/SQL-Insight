@@ -11,7 +11,8 @@
       "Bash(mvn clean install -DskipTests -T 4)",
       "Bash(mvn clean compile -DskipTests -pl sql-insight-core -am)",
       "WebFetch(domain:registry.npmjs.org)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(find /c/Users/master/IdeaProjects/SQL-Insight/backend -name \"*.java\" | xargs wc -l 2>/dev/null | tail -1)"
     ]
   }
 }

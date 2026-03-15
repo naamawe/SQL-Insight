@@ -18,7 +18,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -192,32 +191,40 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
      * 比字符串匹配更可靠，不会被注释或字符串字面量中的 SELECT 关键字干扰。
      */
     private boolean isSubquery(Statement statement) {
-        AtomicBoolean found = new AtomicBoolean(false);
-        new TablesNamesFinder() {
-            @Override
-            public void visit(ParenthesedSelect parenthesedSelect) {
-                found.set(true);
-                super.visit(parenthesedSelect);
-            }
-        }.getTables(statement);
-        return found.get();
+        SubqueryDetector detector = new SubqueryDetector();
+        detector.getTables(statement);
+        return detector.found;
     }
 
     /**
      * 通过 AST 遍历检测是否含有聚合函数（COUNT / SUM / AVG / MAX / MIN）。
      */
     private boolean isAggregation(Statement statement) {
-        AtomicBoolean found = new AtomicBoolean(false);
-        new TablesNamesFinder() {
-            @Override
-            public void visit(Function function) {
-                if (AGG_FUNCTIONS.contains(function.getName().toUpperCase())) {
-                    found.set(true);
-                }
-                super.visit(function);
+        AggregationDetector detector = new AggregationDetector();
+        detector.getTables(statement);
+        return detector.found;
+    }
+
+    private static class SubqueryDetector extends TablesNamesFinder {
+        boolean found = false;
+
+        @Override
+        public void visit(ParenthesedSelect parenthesedSelect) {
+            found = true;
+            super.visit(parenthesedSelect);
+        }
+    }
+
+    private static class AggregationDetector extends TablesNamesFinder {
+        boolean found = false;
+
+        @Override
+        public void visit(Function function) {
+            if (AGG_FUNCTIONS.contains(function.getName().toUpperCase())) {
+                found = true;
             }
-        }.getTables(statement);
-        return found.get();
+            super.visit(function);
+        }
     }
 
     /**

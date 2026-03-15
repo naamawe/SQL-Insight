@@ -1,14 +1,12 @@
 package com.xhx.web.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.xhx.ai.service.NlFeedbackGenerator;
 import com.xhx.common.context.UserContext;
 import com.xhx.common.result.Result;
 import com.xhx.core.model.dto.SqlChatRequest;
 import com.xhx.ai.listener.ChatStreamListener;
 import com.xhx.core.model.vo.ChatRecordVO;
 import com.xhx.core.service.sql.*;
-import com.xhx.core.service.chart.ChartConfigService;
 import com.xhx.dal.entity.ChatSession;
 import com.xhx.core.model.vo.ChatSessionVO;
 import com.xhx.web.adapter.SseChatAdapter;
@@ -20,7 +18,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -36,13 +33,9 @@ import static com.xhx.common.constant.SystemPermissionConstants.USER;
 @PreAuthorize("hasRole('" + USER + "')")
 public class SqlChatController {
 
-    private final SqlExecutorService  sqlExecutorService;
     private final ChatSessionService  chatSessionService;
     private final SqlChatApiService   sqlChatApiService;
     private final ChatRecordService   chatRecordService;
-    private final SqlSecurityService  sqlSecurityService;
-    private final NlFeedbackGenerator nlFeedbackGenerator;
-    private final ChartConfigService  chartConfigService;
 
     /**
      * SSE 流式 AI 对话
@@ -151,66 +144,6 @@ public class SqlChatController {
      */
     @PostMapping("/records/{recordId}/rerun")
     public Result<Map<String, Object>> rerunRecord(@PathVariable Long recordId) {
-        Long userId = UserContext.getUserId();
-
-        log.info("[历史记录重执行] 开始执行, userId: {}, recordId: {}", userId, recordId);
-
-        ChatRecordVO record = chatRecordService.getById(recordId, userId);
-
-        // 如果缓存仍然有效，直接返回，避免不必要的数据库查询
-        if (!record.getResultExpired() && record.getResultData() != null) {
-            log.info("[历史记录重执行] 缓存仍然有效，直接返回, userId: {}, recordId: {}", userId, recordId);
-            Map<String, Object> response = new HashMap<>();
-            response.put("data", record.getResultData());
-            response.put("summary", record.getSummary());
-            response.put("total", record.getRowTotal());
-            return Result.success(response);
-        }
-
-        Long dataSourceId = chatSessionService.getSessionDetail(userId, record.getSessionId()).getDataSourceId();
-
-        // 重新校验 SQL 安全性，防止用户权限变更后越权访问
-        try {
-            sqlSecurityService.validate(record.getSqlText(), userId, dataSourceId);
-        } catch (Exception e) {
-            log.warn("[历史记录重执行失败] 安全校验未通过, userId: {}, recordId: {}, sql: {}, reason: {}",
-                    userId, recordId, record.getSqlText(), e.getMessage());
-            throw e;
-        }
-
-        List<Map<String, Object>> data = sqlExecutorService.execute(dataSourceId, record.getSqlText());
-
-        log.info("[历史记录重执行成功] userId: {}, recordId: {}, 原始行数: {}, 当前行数: {}",
-                userId, recordId, record.getRowTotal(), data.size());
-
-        // 重新生成 AI 摘要和图表配置
-        com.xhx.ai.model.FeedbackResponse feedbackResponse =
-                nlFeedbackGenerator.generateWithChart(record.getQuestion(), record.getSqlText(), data);
-        String newSummary = feedbackResponse != null ? feedbackResponse.getSummary() : "";
-
-        // 缓存结果并更新摘要和行数
-        chatRecordService.cacheResult(recordId, data, newSummary);
-
-        // 重新保存图表配置（如果 AI 返回了推荐）
-        if (feedbackResponse != null && feedbackResponse.getChart() != null) {
-            com.xhx.dal.entity.ChartConfig chartConfig = com.xhx.dal.entity.ChartConfig.builder()
-                    .recordId(recordId)
-                    .type(feedbackResponse.getChart().getType())
-                    .xAxis(feedbackResponse.getChart().getXAxis())
-                    .yAxis(feedbackResponse.getChart().getYAxis())
-                    .title(feedbackResponse.getChart().getTitle())
-                    .isUserModified(false)
-                    .build();
-            chartConfigService.saveOrUpdate(chartConfig);
-            log.info("[历史记录重执行] 图表配置已更新，recordId: {}, type: {}",
-                    recordId, feedbackResponse.getChart().getType());
-        }
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("data", data);
-        response.put("summary", newSummary);
-        response.put("total", data.size());
-
-        return Result.success(response);
+        return Result.success(sqlChatApiService.rerunRecord(recordId, UserContext.getUserId()));
     }
 }

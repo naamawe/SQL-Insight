@@ -16,4 +16,14 @@ public interface SqlChatApiService {
      * @param question     用户提问
      * @param listener     业务流监听器（用于解耦传输协议）
      */
-    void executeChatStream(Long userId, Long sessionId, Long dataSourceId, String question, ChatStreamListener listener);}
+    void executeChatStream(Long userId, Long sessionId, Long dataSourceId, String question, ChatStreamListener listener);
+
+    /**
+     * 重新执行历史记录的 SQL，刷新缓存、摘要和图表配置
+     *
+     * @param recordId 历史记录 ID
+     * @param userId   当前用户 ID
+     * @return 包含 data、summary、total 的结果
+     */
+    java.util.Map<String, Object> rerunRecord(Long recordId, Long userId);
+}

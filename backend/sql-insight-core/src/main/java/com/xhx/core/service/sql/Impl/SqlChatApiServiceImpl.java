@@ -2,9 +2,11 @@ package com.xhx.core.service.sql.Impl;
 
 import com.xhx.ai.listener.ChatStreamListener;
 import com.xhx.ai.model.AiResponse;
-import com.xhx.ai.model.ChartConfigDTO;
+import com.xhx.ai.model.FeedbackResponse;
 import com.xhx.ai.service.NlFeedbackGenerator;
 import com.xhx.common.util.CommonUtil;
+import com.xhx.core.listener.FeedbackCaptureListener;
+import com.xhx.core.model.vo.ChatRecordVO;
 import com.xhx.core.service.chart.ChartConfigService;
 import com.xhx.core.service.sql.*;
 import com.xhx.dal.entity.ChartConfig;
@@ -14,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
@@ -32,6 +35,7 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
     private final NlFeedbackGenerator nlFeedbackGenerator;
     private final ChatRecordService   chatRecordService;
     private final ChartConfigService  chartConfigService;
+    private final SqlSecurityService  sqlSecurityService;
 
     @Async("aiExecutor")
     @Override
@@ -74,67 +78,8 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
 
             listener.onData(data, finalSessionId, recordId);
 
-            // 使用 AtomicLong 传递 recordId 给内部监听器
-            final AtomicLong savedRecordId = new AtomicLong(recordId);
-            // 累积流式摘要
-            final StringBuilder summaryBuffer = new StringBuilder();
-
-            // 创建内部监听器，拦截图表配置和完成事件
-            ChatStreamListener internalListener = new ChatStreamListener() {
-                @Override
-                public void onStage(String message) {
-                    listener.onStage(message);
-                }
-
-                @Override
-                public void onSql(String sql, boolean corrected) {
-                    listener.onSql(sql, corrected);
-                }
-
-                @Override
-                public void onData(List<Map<String, Object>> data, Long sessionId, Long recordId) {
-                    listener.onData(data, sessionId, recordId);
-                }
-
-                @Override
-                public void onSummaryToken(String token) {
-                    summaryBuffer.append(token); // 累积摘要
-                    listener.onSummaryToken(token);
-                }
-
-                @Override
-                public void onChartConfig(ChartConfigDTO chartConfig) {
-                    // 推送给前端
-                    listener.onChartConfig(chartConfig);
-                    // 保存到数据库
-                    if (chartConfig != null) {
-                        saveChartConfig(savedRecordId.get(), chartConfig);
-                    }
-                }
-
-                @Override
-                public void onComplete() {
-                    // 完成时更新缓存中的摘要，同时更新数据库中的 summary
-                    String summary = summaryBuffer.toString();
-                    chatRecordService.cacheResult(savedRecordId.get(), data, summary);
-                    listener.onComplete();
-                }
-
-                @Override
-                public void onError(String message) {
-                    // 连接异常断开时，尝试保存已累积的摘要
-                    if (!summaryBuffer.isEmpty()) {
-                        try {
-                            String partialSummary = summaryBuffer.toString();
-                            chatRecordService.cacheResult(savedRecordId.get(), data, partialSummary);
-                            log.info("连接异常断开，已保存部分摘要，recordId: {}", savedRecordId.get());
-                        } catch (Exception e) {
-                            log.warn("异常断开时摘要保存失败：{}", e.getMessage());
-                        }
-                    }
-                    listener.onError(message);
-                }
-            };
+            ChatStreamListener internalListener = new FeedbackCaptureListener(
+                    listener, new AtomicLong(recordId), data, chatRecordService, chartConfigService);
 
             // 调用流式生成
             nlFeedbackGenerator.generateStream(question, finalSql, data, internalListener);
@@ -149,6 +94,49 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
         }
     }
 
+    @Override
+    public Map<String, Object> rerunRecord(Long recordId, Long userId) {
+        ChatRecordVO record = chatRecordService.getById(recordId, userId);
+
+        // 缓存仍有效，直接返回
+        if (!record.getResultExpired() && record.getResultData() != null) {
+            log.info("[历史记录重执行] 缓存有效，直接返回, userId: {}, recordId: {}", userId, recordId);
+            return Map.of("data", record.getResultData(),
+                    "summary", record.getSummary(),
+                    "total", record.getRowTotal());
+        }
+
+        Long dataSourceId = chatSessionService.getSessionDetail(userId, record.getSessionId()).getDataSourceId();
+        sqlSecurityService.validate(record.getSqlText(), userId, dataSourceId);
+
+        List<Map<String, Object>> data = sqlExecutorService.execute(dataSourceId, record.getSqlText());
+        log.info("[历史记录重执行成功] userId: {}, recordId: {}, 行数: {}", userId, recordId, data.size());
+
+        FeedbackResponse feedback = nlFeedbackGenerator.generateWithChart(
+                record.getQuestion(), record.getSqlText(), data);
+        String summary = feedback != null ? feedback.getSummary() : "";
+
+        chatRecordService.cacheResult(recordId, data, summary);
+
+        if (feedback != null && feedback.getChart() != null) {
+            chartConfigService.saveOrUpdate(ChartConfig.builder()
+                    .recordId(recordId)
+                    .type(feedback.getChart().getType())
+                    .xAxis(feedback.getChart().getXAxis())
+                    .yAxis(feedback.getChart().getYAxis())
+                    .title(feedback.getChart().getTitle())
+                    .isUserModified(false)
+                    .build());
+            log.info("[历史记录重执行] 图表配置已更新，recordId: {}", recordId);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("data", data);
+        result.put("summary", summary);
+        result.put("total", data.size());
+        return result;
+    }
+
     // ==================== 私有方法 ====================
 
     /**
@@ -160,26 +148,6 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
         } catch (Exception e) {
             log.warn("拦截记录保存失败：{}", e.getMessage());
         }
-    }
-
-    /**
-     * 保存图表配置
-     */
-    private void saveChartConfig(Long recordId, ChartConfigDTO chartConfig) {
-        if (chartConfig == null) {
-            return;
-        }
-
-        ChartConfig config = ChartConfig.builder()
-                .recordId(recordId)
-                .type(chartConfig.getType())
-                .xAxis(chartConfig.getXAxis())
-                .yAxis(chartConfig.getYAxis())
-                .title(chartConfig.getTitle())
-                .isUserModified(false)
-                .build();
-        chartConfigService.saveOrUpdate(config);
-        log.info("图表配置已保存，recordId: {}, type: {}", recordId, chartConfig.getType());
     }
 
     private Long resolveSessionId(Long userId, Long sessionId, Long dataSourceId, String question) {
