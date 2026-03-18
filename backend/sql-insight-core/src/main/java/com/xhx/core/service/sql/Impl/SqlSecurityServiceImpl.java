@@ -1,6 +1,8 @@
 package com.xhx.core.service.sql.Impl;
 
 import com.alibaba.fastjson2.JSON;
+import com.xhx.common.exception.ErrorCode;
+import com.xhx.common.exception.ServiceException;
 import com.xhx.common.util.CommonUtil;
 import com.xhx.core.service.cache.CacheService;
 import com.xhx.core.service.sql.SqlSecurityService;
@@ -80,9 +82,12 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
 
             checkPolicy(userId, statement, sql.toUpperCase(), dbType);
 
+        } catch (ServiceException e) {
+            // 业务异常直接抛出
+            throw e;
         } catch (Exception e) {
             log.error("[审计未通过] {}", e.getMessage());
-            throw new RuntimeException("SQL 安全风险拦截: " + e.getMessage());
+            throw ErrorCode.SQL_SECURITY_VIOLATION.toException(e.getMessage());
         }
     }
 
@@ -92,18 +97,18 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
     private void checkTableAccess(Long userId, Long dataSourceId, List<String> tableNames) {
         Set<String> allPerms = cacheService.getUserPermissions(userId);
         if (allPerms == null) {
-            throw new RuntimeException("权限信息不可用，请重新登录后再试");
+            throw ErrorCode.PERMISSION_DENIED.toException("权限信息不可用，请重新登录后再试");
         }
         for (String tableName : tableNames) {
             // 跳过系统元数据表的权限检查
             if (SYSTEM_TABLES.contains(tableName)) {
-                log.debug("[安全审计] 跳过系统表权限检查: {}", tableName);
+                log.debug("[安全审计] 跳过系统表权限检查：{}", tableName);
                 continue;
             }
 
             String required = dataSourceId + ":" + tableName + ":SELECT";
             if (!allPerms.contains(required)) {
-                throw new RuntimeException("无权访问表: " + tableName);
+                throw ErrorCode.PERMISSION_DENIED.toException("无权访问表：" + tableName);
             }
         }
     }
@@ -120,26 +125,27 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
         QueryPolicy policy = JSON.parseObject(policyJson, QueryPolicy.class);
 
         if (policy.getAllowJoin() == 0 && upperSql.contains("JOIN")) {
-            throw new RuntimeException("当前策略禁止关联查询(JOIN)");
+            throw ErrorCode.SQL_NOT_ALLOWED.toException("当前策略禁止关联查询 (JOIN)");
         }
         if (policy.getAllowSubquery() == 0 && isSubquery(statement)) {
-            throw new RuntimeException("当前策略禁止执行子查询");
+            throw ErrorCode.SQL_NOT_ALLOWED.toException("当前策略禁止执行子查询");
         }
         if (policy.getAllowAggregation() == 0 && isAggregation(statement)) {
-            throw new RuntimeException("当前策略禁止执行聚合统计");
+            throw ErrorCode.SQL_NOT_ALLOWED.toException("当前策略禁止执行聚合统计");
         }
 
         // 智能判断是否需要 LIMIT 检查
         if (needsRowLimit(statement, upperSql)) {
             if (!hasRowLimit(upperSql, dbType)) {
-                throw new RuntimeException("必须包含行数限制，最大允许 "
-                        + policy.getMaxLimit() + " 行");
+                throw ErrorCode.SQL_NOT_ALLOWED.toException(
+                        "必须包含行数限制，最大允许 " + policy.getMaxLimit() + " 行");
             }
 
-            // 校验LIMIT值不能超过策略配置的最大值
+            // 校验 LIMIT 值不能超过策略配置的最大值
             int limitValue = extractLimitValue(upperSql, dbType);
             if (limitValue > policy.getMaxLimit()) {
-                throw new RuntimeException("LIMIT 值不能超过 " + policy.getMaxLimit() + " 行");
+                throw ErrorCode.SQL_NOT_ALLOWED.toException(
+                        "LIMIT 值不能超过 " + policy.getMaxLimit() + " 行");
             }
         } else {
             log.debug("[安全审计] SQL 为单行聚合查询，豁免 LIMIT 检查");
@@ -228,10 +234,10 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
     }
 
     /**
-     * 提取SQL中的LIMIT值，支持多种数据库方言
-     * @param upperSql 大写的SQL语句
+     * 提取 SQL 中的 LIMIT 值，支持多种数据库方言
+     * @param upperSql 大写的 SQL 语句
      * @param dbType 数据库类型
-     * @return LIMIT值，提取失败返回0
+     * @return LIMIT 值，提取失败返回 0
      */
     private int extractLimitValue(String upperSql, String dbType) {
         try {
@@ -241,7 +247,7 @@ public class SqlSecurityServiceImpl implements SqlSecurityService {
                 return Integer.parseInt(matcher.group(1));
             }
         } catch (Exception e) {
-            log.warn("提取LIMIT值失败: {}", e.getMessage());
+            log.warn("提取 LIMIT 值失败：{}", e.getMessage());
         }
         return 0;
     }

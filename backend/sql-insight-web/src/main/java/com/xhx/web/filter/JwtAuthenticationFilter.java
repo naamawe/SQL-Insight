@@ -56,50 +56,54 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     @NotNull FilterChain filterChain)
             throws ServletException, IOException {
 
-        String authHeader = request.getHeader(AUTHORIZATION_HEADER);
-        if (!StringUtils.hasText(authHeader) || !authHeader.startsWith(TOKEN_PREFIX)) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        String token = authHeader.substring(TOKEN_PREFIX.length());
-
         try {
-            Claims claims = jwtUtil.parseToken(token);
-            Long userId = claims.get("userId", Long.class);
-            String username = claims.getSubject();
-
-            // 校验 Token 是否仍然有效
-            String cachedToken = cacheService.getToken(userId);
-            if (!StringUtils.hasText(cachedToken) || !cachedToken.equals(token)) {
-                log.warn("Token 已失效，用户: {}", username);
-                renderError(response, "登录已失效，请重新登录");
+            String authHeader = request.getHeader(AUTHORIZATION_HEADER);
+            if (!StringUtils.hasText(authHeader) || !authHeader.startsWith(TOKEN_PREFIX)) {
+                filterChain.doFilter(request, response);
                 return;
             }
 
-            // 获取实时系统权限快照
-            String latestPerm = cacheService.getUserSysPerm(userId);
-            if (!StringUtils.hasText(latestPerm)) {
-                log.warn("权限快照缺失，用户: {}", username);
-                renderError(response, "权限已变更，请重新登录");
-                return;
+            String token = authHeader.substring(TOKEN_PREFIX.length());
+
+            try {
+                Claims claims = jwtUtil.parseToken(token);
+                Long userId = claims.get("userId", Long.class);
+                String username = claims.getSubject();
+
+                // 校验 Token 是否仍然有效
+                String cachedToken = cacheService.getToken(userId);
+                if (!StringUtils.hasText(cachedToken) || !cachedToken.equals(token)) {
+                    log.warn("Token 已失效，用户：{}", username);
+                    renderError(response, "登录已失效，请重新登录");
+                    return;
+                }
+
+                // 获取实时系统权限快照
+                String latestPerm = cacheService.getUserSysPerm(userId);
+                if (!StringUtils.hasText(latestPerm)) {
+                    log.warn("权限快照缺失，用户：{}", username);
+                    renderError(response, "权限已变更，请重新登录");
+                    return;
+                }
+
+                // 自动续期
+                renewIfNeeded(userId, username);
+
+                if (SecurityContextHolder.getContext().getAuthentication() == null) {
+                    List<String> roles = Collections.singletonList(latestPerm);
+                    setupSecurityContext(request, userId, username, roles);
+                    MDC.put(MdcLoggingFilter.USER_ID_KEY, String.valueOf(userId));
+                    log.debug("认证成功，用户：{}，权限：{}", username, latestPerm);
+                }
+
+                filterChain.doFilter(request, response);
+
+            } catch (Exception e) {
+                log.error("JWT 校验异常：{}", e.getMessage());
+                renderError(response, "无效的令牌");
             }
-
-            // 自动续期
-            renewIfNeeded(userId, username);
-
-            if (SecurityContextHolder.getContext().getAuthentication() == null) {
-                List<String> roles = Collections.singletonList(latestPerm);
-                setupSecurityContext(request, userId, username, roles);
-                MDC.put(MdcLoggingFilter.USER_ID_KEY, String.valueOf(userId));
-                log.debug("认证成功，用户: {}，权限: {}", username, latestPerm);
-            }
-
-            filterChain.doFilter(request, response);
-
-        } catch (Exception e) {
-            log.error("JWT 校验异常: {}", e.getMessage());
-            renderError(response, "无效的令牌");
+        } finally {
+            UserContext.clear();
         }
     }
 
@@ -113,7 +117,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         } catch (Exception e) {
             // 续期失败不影响本次请求
-            log.warn("用户 {} Token 续期失败: {}", userId, e.getMessage());
+            log.warn("用户 {} Token 续期失败：{}", userId, e.getMessage());
         }
     }
 

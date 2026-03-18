@@ -44,7 +44,6 @@ public class MdcLoggingFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
 
         } finally {
-            com.xhx.common.context.UserContext.clear();
             MDC.remove(TRACE_ID_KEY);
             MDC.remove(USER_ID_KEY);
         }

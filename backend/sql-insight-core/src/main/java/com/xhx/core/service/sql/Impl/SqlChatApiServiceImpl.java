@@ -13,8 +13,14 @@ import com.xhx.dal.entity.ChartConfig;
 import com.xhx.dal.entity.ChatSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionCallbackWithoutResult;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.HashMap;
 import java.util.List;
@@ -29,18 +35,33 @@ import java.util.concurrent.atomic.AtomicLong;
 @RequiredArgsConstructor
 public class SqlChatApiServiceImpl implements SqlChatApiService {
 
-    private final SqlGeneratorService sqlGeneratorService;
-    private final SqlExecutorService  sqlExecutorService;
-    private final ChatSessionService  chatSessionService;
-    private final NlFeedbackGenerator nlFeedbackGenerator;
-    private final ChatRecordService   chatRecordService;
-    private final ChartConfigService  chartConfigService;
-    private final SqlSecurityService  sqlSecurityService;
+    private final SqlGeneratorService      sqlGeneratorService;
+    private final SqlExecutorService       sqlExecutorService;
+    private final ChatSessionService       chatSessionService;
+    private final NlFeedbackGenerator      nlFeedbackGenerator;
+    private final ChatRecordService        chatRecordService;
+    private final ChartConfigService       chartConfigService;
+    private final SqlSecurityService       sqlSecurityService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final TransactionTemplate      transactionTemplate;
 
     @Async("aiExecutor")
     @Override
     public void executeChatStream(Long userId, Long sessionId, Long dataSourceId,
                                   String question, ChatStreamListener listener) {
+        // 异步方法只负责开启线程，事务控制在内部同步方法中
+        executeChatStreamInternal(userId, sessionId, dataSourceId, question, listener);
+    }
+
+    /**
+     * 核心业务逻辑（带事务控制）
+     * <p>
+     * 事务范围：从保存对话记录 → 缓存查询结果 → 保存图表配置
+     * 任何一步失败都会回滚，确保数据一致性
+     */
+    @Transactional(rollbackFor = Exception.class)
+    private void executeChatStreamInternal(Long userId, Long sessionId, Long dataSourceId,
+                                          String question, ChatStreamListener listener) {
         Long finalSessionId = null;
         try {
             finalSessionId = resolveSessionId(userId, sessionId, dataSourceId, question);
@@ -72,28 +93,42 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
             final String finalSql = result.finalSql();
             final boolean corrected = result.corrected();
 
-            // 先保存对话记录，获取 recordId
+            // 先保存对话记录，获取 recordId（事务起点）
             Long recordId = chatRecordService.save(
                     finalSessionId, question, finalSql, data.size(), null, corrected);
 
             listener.onData(data, finalSessionId, recordId);
 
             ChatStreamListener internalListener = new FeedbackCaptureListener(
-                    listener, new AtomicLong(recordId), data, chatRecordService, chartConfigService);
+                    listener, new AtomicLong(recordId), data, eventPublisher, chartConfigService);
 
-            // 调用流式生成
+            // 调用流式生成（内部会触发 onSummaryToken 累积和 onChartConfig 保存）
             nlFeedbackGenerator.generateStream(question, finalSql, data, internalListener);
+            // generateStream 完成后，FeedbackCaptureListener.onComplete() 会被调用
+            // 该方法会发布 ChatRecordCompletedEvent 事件，由监听器异步处理缓存
 
         } catch (Exception e) {
             log.error("AI 业务流执行失败，sessionId: {}", finalSessionId, e);
             listener.onError(e.getMessage());
             // 会话已建立但流程中断（如 SQL 安全校验拦截），仍保存一条错误记录
             if (finalSessionId != null) {
-                saveBlockedRecord(finalSessionId, question, e.getMessage());
+                try {
+                    chatRecordService.save(finalSessionId, question, null, 0, e.getMessage(), false);
+                } catch (Exception ex) {
+                    log.warn("拦截记录保存失败：{}", ex.getMessage());
+                }
             }
+            // 重新抛出异常，触发事务回滚
+            throw e;
         }
     }
 
+    /**
+     * 重新执行历史记录（带事务控制）
+     * <p>
+     * 事务范围：缓存查询结果 → 保存图表配置
+     */
+    @Transactional(rollbackFor = Exception.class)
     @Override
     public Map<String, Object> rerunRecord(Long recordId, Long userId) {
         ChatRecordVO record = chatRecordService.getById(recordId, userId);
@@ -141,13 +176,21 @@ public class SqlChatApiServiceImpl implements SqlChatApiService {
 
     /**
      * 保存被拦截/异常中断的对话记录，sql 为 null，summary 存错误原因
+     * <p>
+     * 使用独立事务（REQUIRES_NEW），确保记录能被保存，不受主事务回滚影响
      */
     private void saveBlockedRecord(Long sessionId, String question, String errorMessage) {
-        try {
-            chatRecordService.save(sessionId, question, null, 0, errorMessage, false);
-        } catch (Exception e) {
-            log.warn("拦截记录保存失败：{}", e.getMessage());
-        }
+        transactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
+        transactionTemplate.execute(new TransactionCallbackWithoutResult() {
+            @Override
+            protected void doInTransactionWithoutResult(@NotNull TransactionStatus status) {
+                try {
+                    chatRecordService.save(sessionId, question, null, 0, errorMessage, false);
+                } catch (Exception e) {
+                    log.warn("拦截记录保存失败：{}", e.getMessage());
+                }
+            }
+        });
     }
 
     private Long resolveSessionId(Long userId, Long sessionId, Long dataSourceId, String question) {

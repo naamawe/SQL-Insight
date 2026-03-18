@@ -4,6 +4,7 @@ import com.alibaba.dashscope.embeddings.TextEmbedding;
 import com.alibaba.dashscope.embeddings.TextEmbeddingParam;
 import com.alibaba.dashscope.embeddings.TextEmbeddingResult;
 import com.xhx.ai.config.AliyunAiProperties;
+import com.xhx.common.exception.ErrorCode;
 import com.xhx.common.exception.ServiceException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,7 +51,7 @@ public class AliyunEmbeddingService {
 
         } catch (Exception e) {
             log.error("调用阿里云 Embedding 接口失败: {}", e.getMessage());
-            throw new RuntimeException("语义向量化失败", e);
+            throw ErrorCode.EMBEDDING_FAILED.toException(e.getMessage());
         }
     }
 }

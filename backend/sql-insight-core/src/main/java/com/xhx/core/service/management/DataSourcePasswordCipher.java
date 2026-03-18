@@ -1,5 +1,6 @@
 package com.xhx.core.service.management;
 
+import com.xhx.common.exception.ErrorCode;
 import com.xhx.common.util.AesUtil;
 import com.xhx.dal.entity.DataSource;
 import lombok.extern.slf4j.Slf4j;
@@ -52,8 +53,7 @@ public class DataSourcePasswordCipher {
 
     private void assertKeyConfigured() {
         if (!StringUtils.hasText(encryptKey)) {
-            throw new IllegalStateException(
-                    "数据源密码加密密钥未配置，请设置环境变量 DS_ENCRYPT_KEY 或配置 ds.encrypt-key");
+            throw ErrorCode.DATASOURCE_CONFIG_ERROR.toException("数据源密码加密密钥未配置，请设置环境变量 DS_ENCRYPT_KEY 或配置 ds.encrypt-key");
         }
     }
 }

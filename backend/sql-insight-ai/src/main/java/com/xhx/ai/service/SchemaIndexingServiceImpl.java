@@ -1,6 +1,7 @@
 package com.xhx.ai.service;
 
 import com.xhx.ai.config.QdrantProperties;
+import com.xhx.common.exception.ErrorCode;
 import com.xhx.common.model.ColumnMetadata;
 import com.xhx.common.model.TableMetadata;
 import io.qdrant.client.QdrantClient;
@@ -87,12 +88,12 @@ public class SchemaIndexingServiceImpl implements SchemaIndexingService {
                     properties.getCollectionName(), vectorSize);
 
         } catch (TimeoutException e) {
-            throw new RuntimeException("Qdrant 连接超时，请检查服务是否可达", e);
+            throw ErrorCode.AI_TIMEOUT.toException("Qdrant 连接超时，请检查服务是否可达");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("创建 Collection 被中断", e);
+            throw ErrorCode.AI_SERVICE_UNAVAILABLE.toException("创建 Collection 被中断");
         } catch (ExecutionException e) {
-            throw new RuntimeException("创建 Collection 失败: " + cause(e), e);
+            throw ErrorCode.SCHEMA_LINKING_FAILED.toException(cause(e));
         }
     }
 
