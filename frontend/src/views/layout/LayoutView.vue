@@ -545,8 +545,8 @@ async function confirmLogout() {
                       @change="toggleSessionSelection(s.id)"
                     />
                   </td>
-                  <td class="col-title">
-                    <span class="session-title-link" @click="handleJumpToSession(s)">{{ s.title }}</span>
+                  <td class="col-title" @click="handleJumpToSession(s)">
+                    <span class="session-title-link">{{ s.title }}</span>
                   </td>
                   <td class="col-datasource">{{ s.dataSourceName }}</td>
                   <td class="col-count">{{ s.messageCount }}</td>
@@ -1710,13 +1710,16 @@ async function confirmLogout() {
   gap: 4px;
 }
 
-.session-title-link {
-  color: var(--color-text-primary);
+.col-title {
   cursor: pointer;
 }
 
-.session-title-link:hover {
+.col-title:hover .session-title-link {
   color: var(--color-accent);
+}
+
+.session-title-link {
+  color: var(--color-text-primary);
 }
 
 .session-manage-table-rename {

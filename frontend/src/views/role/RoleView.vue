@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { roleApi } from '@/api/user'
 import type { Role } from '@/types'
@@ -36,6 +36,14 @@ async function fetchList() {
     loading.value = false
   }
 }
+
+// 防抖搜索
+let searchTimer: ReturnType<typeof setTimeout>
+watch(searchName, () => {
+  clearTimeout(searchTimer)
+  pagination.current = 1
+  searchTimer = setTimeout(fetchList, 300)
+})
 
 function handleSearch() {
   pagination.current = 1
@@ -168,7 +176,6 @@ onUnmounted(() => {
           placeholder="搜索角色名称…"
           clearable
           class="search-input"
-          @keyup.enter="handleSearch"
           @clear="handleSearch"
         >
           <template #prefix>

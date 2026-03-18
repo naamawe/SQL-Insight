@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { dataSourceApi } from '@/api/datasource'
 import type { DataSourceVO, DataSourceSaveDTO } from '@/types'
@@ -42,6 +42,14 @@ function handleSearch() {
   pagination.current = 1
   fetchList()
 }
+
+// 防抖搜索
+let searchTimer: ReturnType<typeof setTimeout>
+watch(searchName, () => {
+  clearTimeout(searchTimer)
+  pagination.current = 1
+  searchTimer = setTimeout(fetchList, 300)
+})
 
 function handlePageChange(page: number) {
   pagination.current = page
@@ -266,7 +274,6 @@ onUnmounted(() => {
           placeholder="搜索连接名称..."
           clearable
           class="search-input"
-          @keyup.enter="handleSearch"
           @clear="handleSearch"
         >
           <template #prefix>
