@@ -9,6 +9,7 @@ import com.xhx.core.model.vo.ChatRecordVO;
 import com.xhx.core.service.sql.*;
 import com.xhx.dal.entity.ChatSession;
 import com.xhx.core.model.vo.ChatSessionVO;
+import com.xhx.core.model.vo.ChatSessionSearchVO;
 import com.xhx.web.adapter.SseChatAdapter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -119,6 +120,30 @@ public class SqlChatController {
         return Result.success("批量删除成功", null);
     }
 
+    /**
+     * 搜索会话
+     */
+    @GetMapping("/sessions/search")
+    public Result<Page<ChatSessionSearchVO>> searchSessions(
+            @RequestParam(required = false, defaultValue = "") String keyword,
+            @RequestParam(defaultValue = "1") int current,
+            @RequestParam(defaultValue = "10") int size) {
+        Long userId = UserContext.getUserId();
+
+        // 限制单次最多查询 100 条
+        if (size > 100) {
+            size = 100;
+        }
+
+        log.info("[会话搜索] userId: {}, keyword: '{}'", userId, keyword);
+
+        Page<ChatSessionSearchVO> result = chatSessionService.searchSessions(userId, keyword.trim(), current, size);
+
+        log.info("[会话搜索完成] userId: {}, 结果数：{}", userId, result.getTotal());
+
+        return Result.success(result);
+    }
+
     // ==================== 历史记录 ====================
 
     /**
@@ -129,7 +154,6 @@ public class SqlChatController {
         Long userId = UserContext.getUserId();
         log.info("[历史记录查询] userId: {}, sessionId: {}", userId, sessionId);
         
-        chatSessionService.getSessionDetail(userId, sessionId);
         List<ChatRecordVO> records = chatRecordService.getBySessionId(sessionId);
         
         log.info("[历史记录查询完成] userId: {}, sessionId: {}, 记录数: {}", 

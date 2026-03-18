@@ -141,3 +141,12 @@ export interface ChartConfigDTO {
   yAxis: string[]
   title: string
 }
+
+/** 会话搜索响应（用于对话框展示） */
+export interface ChatSessionSearchVO {
+  id: number
+  dataSourceName: string
+  title: string
+  createTime: string
+  messageCount: number
+}

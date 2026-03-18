@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
+import { chatApi } from '@/api/chat'
 
 const router = useRouter()
 const route = useRoute()
@@ -12,7 +14,14 @@ const chatStore = useChatStore()
 const collapsed = ref(false)
 const showLogoutDialog = ref(false)
 const showDeleteDialog = ref(false)
+const showRenameDialog = ref(false)
+const showSessionManageDialog = ref(false)
+const showTableDeleteDialog = ref(false)
+const showBatchDeleteDialog = ref(false)
 const sessionToDelete = ref<any>(null)
+const sessionToRename = ref<any>(null)
+const tableSessionToDelete = ref<any>(null)
+const renameTitle = ref('')
 const showUserMenu = ref(false)
 
 function toggleUserMenu() {
@@ -73,6 +82,164 @@ async function confirmDeleteSession() {
     await chatStore.deleteSession(sessionToDelete.value.id)
     sessionToDelete.value = null
   }
+}
+
+function handleRenameSession(session: any, e: Event) {
+  e.stopPropagation()
+  sessionToRename.value = session
+  renameTitle.value = session.title
+  showRenameDialog.value = true
+}
+
+async function confirmRenameSession() {
+  if (!renameTitle.value.trim()) {
+    showRenameDialog.value = false
+    sessionToRename.value = null
+    renameTitle.value = ''
+    return
+  }
+  try {
+    await chatApi.renameSession(sessionToRename.value.id, renameTitle.value.trim())
+    // 更新本地会话列表
+    const session = chatStore.sessions.find(s => s.id === sessionToRename.value!.id)
+    if (session) {
+      session.title = renameTitle.value.trim()
+    }
+    showRenameDialog.value = false
+    sessionToRename.value = null
+    renameTitle.value = ''
+    ElMessage.success({ message: '重命名成功', duration: 1000 })
+    // 刷新管理对话框的列表（如果打开的话）
+    if (showSessionManageDialog.value) {
+      loadSessionList()
+    }
+  } catch (e: any) {
+    console.error('重命名失败:', e)
+    ElMessage.error({ message: '重命名失败', duration: 1000 })
+  }
+}
+
+// ==================== 会话管理对话框 ====================
+
+const searchKeyword = ref('')
+const sessionList = ref<any[]>([])
+const sessionListTotal = ref(0)
+const sessionCurrentPage = ref(1)
+const sessionPageSize = ref(10)
+const selectedSessionIds = ref<number[]>([])
+const sessionManageLoading = ref(false)
+
+function openSessionManageDialog() {
+  showSessionManageDialog.value = true
+  sessionCurrentPage.value = 1
+  searchKeyword.value = ''
+  loadSessionList()
+}
+
+async function loadSessionList() {
+  sessionManageLoading.value = true
+  try {
+    const result: any = await chatApi.searchSessions(
+      searchKeyword.value || '',
+      sessionCurrentPage.value,
+      sessionPageSize.value
+    )
+    sessionList.value = result.records || []
+    sessionListTotal.value = result.total || 0
+  } catch (e: any) {
+    console.error('加载会话列表失败:', e)
+  } finally {
+    sessionManageLoading.value = false
+  }
+}
+
+function handleSessionSearch() {
+  sessionCurrentPage.value = 1
+  loadSessionList()
+}
+
+function handlePageChange(page: number) {
+  sessionCurrentPage.value = page
+  loadSessionList()
+}
+
+function toggleSessionSelection(id: number) {
+  const idx = selectedSessionIds.value.indexOf(id)
+  if (idx === -1) {
+    selectedSessionIds.value.push(id)
+  } else {
+    selectedSessionIds.value.splice(idx, 1)
+  }
+}
+
+function toggleAllSelection(checked: boolean) {
+  if (checked) {
+    selectedSessionIds.value = sessionList.value.map(s => s.id)
+  } else {
+    selectedSessionIds.value = []
+  }
+}
+
+function handleBatchDelete() {
+  if (selectedSessionIds.value.length === 0) {
+    ElMessage.warning('请先选择要删除的会话')
+    return
+  }
+  showBatchDeleteDialog.value = true
+}
+
+async function confirmBatchDelete() {
+  try {
+    await chatApi.batchDeleteSessions(selectedSessionIds.value)
+    ElMessage.success({ message: `已删除 ${selectedSessionIds.value.length} 个会话`, duration: 1500 })
+    showBatchDeleteDialog.value = false
+    selectedSessionIds.value = []
+    loadSessionList()
+    // 同步更新侧边栏会话列表
+    await chatStore.loadSessions()
+  } catch (e: any) {
+    console.error('批量删除失败:', e)
+    ElMessage.error({ message: '批量删除失败', duration: 1500 })
+  }
+}
+
+function handleDeleteSingleSession(session: any) {
+  tableSessionToDelete.value = session
+  showTableDeleteDialog.value = true
+}
+
+async function confirmTableDeleteSession() {
+  if (!tableSessionToDelete.value) return
+  try {
+    await chatApi.deleteSession(tableSessionToDelete.value.id)
+    ElMessage.success({ message: '删除成功', duration: 1000 })
+    showTableDeleteDialog.value = false
+    tableSessionToDelete.value = null
+    loadSessionList()
+    await chatStore.loadSessions()
+  } catch (e: any) {
+    console.error('删除失败:', e)
+    ElMessage.error({ message: '删除失败', duration: 1000 })
+  }
+}
+
+function handleJumpToSession(session: any) {
+  chatStore.selectSession(session.id)
+  router.push('/chat')
+  showSessionManageDialog.value = false
+}
+
+function handleRenameFromTable(session: any) {
+  sessionToRename.value = session
+  renameTitle.value = session.title
+  showRenameDialog.value = true
+}
+
+function handleRenameMaskClick() {
+  // 点击重命名对话框外面时，只关闭重命名对话框，不关闭搜索对话框
+  showRenameDialog.value = false
+  sessionToRename.value = null
+  renameTitle.value = ''
 }
 
 function handleSelectSession(session: any) {
@@ -170,6 +337,11 @@ async function confirmLogout() {
         <div class="session-section">
           <div class="session-section-header">
             <span>对话记录</span>
+            <button class="session-manage-btn" @click="openSessionManageDialog" title="管理对话记录">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </button>
           </div>
           <TransitionGroup tag="div" name="session-item" class="session-list">
             <div
@@ -188,11 +360,19 @@ async function confirmLogout() {
                 </div>
                 <span class="session-datasource">{{ s.dataSourceName }}</span>
               </div>
-              <button class="session-del" @click="handleDeleteSession(s, $event)">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
+              <div class="session-actions">
+                <button class="session-rename" @click="handleRenameSession(s, $event)" title="重命名">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+                <button class="session-del" @click="handleDeleteSession(s, $event)" title="删除">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
             </div>
             <div v-if="!chatStore.sessions.length && !chatStore.loading" key="empty" class="session-empty">暂无对话记录</div>
           </TransitionGroup>
@@ -269,6 +449,212 @@ async function confirmLogout() {
           <div class="confirm-actions">
             <button class="confirm-cancel" @click="showDeleteDialog = false">取消</button>
             <button class="confirm-ok" @click="confirmDeleteSession">删除</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
+    <!-- ── 重命名会话 dialog ── -->
+    <teleport to="body">
+      <div v-if="showRenameDialog" class="confirm-mask rename-mask" @click.self="handleRenameMaskClick">
+        <div class="confirm-dialog rename-dialog">
+          <div class="confirm-icon" style="background:#fef3c7;color:#d97706">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </div>
+          <div class="confirm-body">
+            <p class="confirm-title">编辑对话名称</p>
+            <input
+              v-model="renameTitle"
+              class="rename-input"
+              type="text"
+              maxlength="100"
+              placeholder="请输入对话名称"
+              @keydown.enter="confirmRenameSession"
+            />
+            <p class="rename-hint">{{ renameTitle.length }}/100</p>
+          </div>
+          <div class="confirm-actions">
+            <button class="confirm-cancel" @click="showRenameDialog = false">取消</button>
+            <button class="confirm-ok" :disabled="!renameTitle.trim()" @click="confirmRenameSession">确定</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
+    <!-- ── 会话管理 dialog ── -->
+    <teleport to="body">
+      <div v-if="showSessionManageDialog" class="session-manage-mask" @click.self="showSessionManageDialog = false">
+        <div class="session-manage-dialog">
+          <!-- 头部 -->
+          <div class="session-manage-header">
+            <div>
+              <h3 class="session-manage-title">对话记录</h3>
+              <p class="session-manage-subtitle">聊天记录保留一年，若对话记录内聊天记录被清空，对话记录将消失。</p>
+            </div>
+            <button class="session-manage-close" @click="showSessionManageDialog = false">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- 搜索框 -->
+          <div class="session-manage-search">
+            <input
+              v-model="searchKeyword"
+              type="text"
+              placeholder="请输入对话记录名称"
+              class="session-manage-search-input"
+              @keydown.enter="handleSessionSearch"
+            />
+            <button class="session-manage-search-btn" @click="handleSessionSearch">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- 表格 -->
+          <div class="session-manage-table-wrap">
+            <table class="session-manage-table">
+              <thead>
+                <tr>
+                  <th class="col-checkbox">
+                    <input
+                      type="checkbox"
+                      :checked="selectedSessionIds.length === sessionList.length && sessionList.length > 0"
+                      :indeterminate="selectedSessionIds.length > 0 && selectedSessionIds.length < sessionList.length"
+                      @change="toggleAllSelection(($event.target as HTMLInputElement).checked)"
+                    />
+                  </th>
+                  <th class="col-title">对话记录名称</th>
+                  <th class="col-datasource">数据源</th>
+                  <th class="col-count">对话条数</th>
+                  <th class="col-time">创建时间</th>
+                  <th class="col-action">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="s in sessionList" :key="s.id">
+                  <td class="col-checkbox">
+                    <input
+                      type="checkbox"
+                      :checked="selectedSessionIds.includes(s.id)"
+                      @change="toggleSessionSelection(s.id)"
+                    />
+                  </td>
+                  <td class="col-title">
+                    <span class="session-title-link" @click="handleJumpToSession(s)">{{ s.title }}</span>
+                  </td>
+                  <td class="col-datasource">{{ s.dataSourceName }}</td>
+                  <td class="col-count">{{ s.messageCount }}</td>
+                  <td class="col-time">{{ s.createTime?.split('T')[0] }}</td>
+                  <td class="col-action">
+                    <div class="col-action-btns">
+                      <button class="session-manage-table-rename" @click="handleRenameFromTable(s)" title="重命名">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                      </button>
+                      <button class="session-manage-table-del" @click="handleDeleteSingleSession(s)" title="删除">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="sessionList.length === 0">
+                  <td colspan="6" class="session-manage-empty">
+                    {{ sessionManageLoading ? '加载中...' : '暂无对话记录' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 分页 -->
+          <div class="session-manage-pagination">
+            <span class="pagination-total">共 {{ sessionListTotal }} 条</span>
+            <div class="pagination-controls">
+              <button
+                :disabled="sessionCurrentPage === 1 || sessionListTotal === 0"
+                class="page-btn"
+                @click="handlePageChange(sessionCurrentPage - 1)"
+              >
+                上一页
+              </button>
+              <span class="page-info">{{ sessionCurrentPage }} / {{ Math.max(1, Math.ceil(sessionListTotal / sessionPageSize)) }}</span>
+              <button
+                :disabled="sessionCurrentPage >= Math.ceil(sessionListTotal / sessionPageSize) || sessionListTotal === 0"
+                class="page-btn"
+                @click="handlePageChange(sessionCurrentPage + 1)"
+              >
+                下一页
+              </button>
+            </div>
+          </div>
+
+          <!-- 底部操作栏 -->
+          <div class="session-manage-footer">
+            <span class="session-manage-selected">
+              已选择 {{ selectedSessionIds.length }} 条
+            </span>
+            <div class="session-manage-footer-actions">
+              <button class="session-manage-btn-cancel" @click="showSessionManageDialog = false">取消</button>
+              <button
+                class="session-manage-btn-delete"
+                :disabled="selectedSessionIds.length === 0"
+                @click="handleBatchDelete"
+              >
+                批量删除
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
+    <!-- ── 表格内删除确认 dialog ── -->
+    <teleport to="body">
+      <div v-if="showTableDeleteDialog" class="confirm-mask rename-mask" @click.self="showTableDeleteDialog = false">
+        <div class="confirm-dialog">
+          <div class="confirm-icon" style="background:#fee2e2;color:#dc2626">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+            </svg>
+          </div>
+          <div class="confirm-body">
+            <p class="confirm-title">删除对话</p>
+            <p class="confirm-desc">确定要删除「{{ tableSessionToDelete?.title }}」吗？此操作不可撤销。</p>
+          </div>
+          <div class="confirm-actions">
+            <button class="confirm-cancel" @click="showTableDeleteDialog = false">取消</button>
+            <button class="confirm-ok" @click="confirmTableDeleteSession">删除</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
+    <!-- ── 批量删除确认 dialog ── -->
+    <teleport to="body">
+      <div v-if="showBatchDeleteDialog" class="confirm-mask rename-mask" @click.self="showBatchDeleteDialog = false">
+        <div class="confirm-dialog">
+          <div class="confirm-icon" style="background:#fee2e2;color:#dc2626">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+            </svg>
+          </div>
+          <div class="confirm-body">
+            <p class="confirm-title">批量删除对话</p>
+            <p class="confirm-desc">确定要删除选中的 {{ selectedSessionIds.length }} 个对话吗？此操作不可撤销。</p>
+          </div>
+          <div class="confirm-actions">
+            <button class="confirm-cancel" @click="showBatchDeleteDialog = false">取消</button>
+            <button class="confirm-ok" @click="confirmBatchDelete">删除</button>
           </div>
         </div>
       </div>
@@ -650,6 +1036,33 @@ async function confirmLogout() {
   white-space: nowrap;
   padding-left: 19px;
 }
+
+.session-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.session-item:hover .session-actions { opacity: 1; }
+
+.session-rename {
+  opacity: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--color-text-sidebar-muted);
+  transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+  cursor: pointer;
+}
+
+.session-item:hover .session-rename { opacity: 1; }
+.session-rename:hover { background: rgba(217, 119, 6, 0.18); color: #fbbf24; }
 
 .session-del {
   opacity: 0;
@@ -1076,5 +1489,368 @@ async function confirmLogout() {
 
 .confirm-ok:hover {
   opacity: 0.88;
+}
+
+/* 重命名对话框专用样式 */
+.rename-dialog .confirm-body {
+  margin: 0 0 16px;
+}
+
+.rename-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-input);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 450;
+  outline: none;
+  transition: border-color var(--transition-fast);
+  box-sizing: border-box;
+}
+
+.rename-input:focus {
+  border-color: var(--color-accent);
+}
+
+.rename-input::placeholder {
+  color: var(--color-text-disabled);
+}
+
+.rename-hint {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  text-align: right;
+  margin-top: 6px;
+}
+
+.confirm-ok:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rename-mask {
+  z-index: 10000;
+}
+
+/* ==================== 会话管理对话框 ==================== */
+
+.session-manage-btn {
+  opacity: 0.5;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-sidebar-muted);
+  transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.session-section-header:hover .session-manage-btn { opacity: 0.8; }
+.session-manage-btn:hover { opacity: 1; background: var(--color-bg-sidebar-hover); color: var(--color-text-sidebar); }
+
+.session-manage-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(2px);
+}
+
+.session-manage-dialog {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  width: 720px;
+  max-width: 90vw;
+  height: 560px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  animation: dialog-in 0.2s ease;
+}
+
+.session-manage-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.session-manage-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 4px;
+}
+
+.session-manage-subtitle {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.session-manage-close {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.session-manage-close:hover {
+  background: var(--color-bg-input);
+  color: var(--color-text-primary);
+}
+
+.session-manage-search {
+  display: flex;
+  padding: 16px 24px;
+  gap: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.session-manage-search-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-input);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.session-manage-search-input:focus {
+  border-color: var(--color-accent);
+}
+
+.session-manage-search-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity var(--transition-fast);
+}
+
+.session-manage-search-btn:hover {
+  opacity: 0.9;
+}
+
+.session-manage-table-wrap {
+  flex: 1;
+  overflow: auto;
+  padding: 0 24px;
+  min-height: 280px;
+}
+
+.session-manage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.session-manage-table th {
+  padding: 12px 8px;
+  text-align: left;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.session-manage-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.session-manage-table tbody tr:hover {
+  background: var(--color-bg-input);
+}
+
+.col-checkbox {
+  width: 40px;
+  text-align: center;
+}
+
+.col-checkbox input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.col-title { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-datasource { width: 120px; color: var(--color-text-secondary); }
+.col-count { width: 80px; text-align: center; }
+.col-time { width: 100px; color: var(--color-text-secondary); }
+.col-action { width: 80px; text-align: center; }
+
+.col-action-btns {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.session-title-link {
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.session-title-link:hover {
+  color: var(--color-accent);
+}
+
+.session-manage-table-rename {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.session-manage-table-rename:hover {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.session-manage-table-del {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  margin: 0 auto;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.session-manage-table-del:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.session-manage-empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--color-text-secondary);
+}
+
+.session-manage-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 20px;
+  border-top: 1px solid var(--color-border);
+}
+
+.pagination-total {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.page-btn {
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  transition: background var(--transition-fast);
+}
+
+.page-btn:hover:not(:disabled) {
+  background: var(--color-border);
+}
+
+.page-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.page-info {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.session-manage-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px 20px;
+  border-top: 1px solid var(--color-border);
+}
+
+.session-manage-selected {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.session-manage-footer-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.session-manage-btn-cancel {
+  padding: 8px 18px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.session-manage-btn-cancel:hover {
+  background: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.session-manage-btn-delete {
+  padding: 8px 18px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  background: #dc2626;
+  color: white;
+  transition: opacity var(--transition-fast);
+}
+
+.session-manage-btn-delete:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.session-manage-btn-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

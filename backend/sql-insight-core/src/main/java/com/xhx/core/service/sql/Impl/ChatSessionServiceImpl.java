@@ -14,6 +14,7 @@ import com.xhx.dal.mapper.ChatRecordMapper;
 import com.xhx.dal.mapper.ChatSessionMapper;
 import com.xhx.dal.mapper.DataSourceMapper;
 import com.xhx.core.model.vo.ChatSessionVO;
+import com.xhx.core.model.vo.ChatSessionSearchVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -153,5 +154,71 @@ public class ChatSessionServiceImpl implements ChatSessionService {
 
         cacheService.evictQueryResults(recordIds);
         log.info("==> 清理了 {} 条记录的查询结果缓存", recordIds.size());
+    }
+
+    @Override
+    public Page<ChatSessionSearchVO> searchSessions(Long userId, String keyword, int current, int size) {
+        // 限制单次最多查询 100 条
+        if (size > 100) {
+            size = 100;
+        }
+
+        // 构建查询条件：空关键词时查询全部，否则模糊匹配
+        LambdaQueryWrapper<ChatSession> wrapper = new LambdaQueryWrapper<ChatSession>()
+                .eq(ChatSession::getUserId, userId)
+                .orderByDesc(ChatSession::getCreateTime);
+
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            wrapper.like(ChatSession::getTitle, keyword.trim());
+        }
+
+        // 分页查询会话
+        Page<ChatSession> sessionPage = chatSessionMapper.selectPage(
+                new Page<>(current, size),
+                wrapper
+        );
+
+        if (sessionPage.getRecords().isEmpty()) {
+            return new Page<>(current, size, 0);
+        }
+
+        // 获取所有会话 ID
+        List<Long> sessionIds = sessionPage.getRecords().stream().map(ChatSession::getId).toList();
+
+        // 批量查询每个会话的消息条数
+        Map<Long, Long> messageCountMap = chatMessageMapper.selectList(
+                new LambdaQueryWrapper<ChatMessageEntity>()
+                        .select(ChatMessageEntity::getSessionId)
+                        .in(ChatMessageEntity::getSessionId, sessionIds)
+        ).stream().collect(Collectors.groupingBy(
+                ChatMessageEntity::getSessionId,
+                Collectors.counting()
+        ));
+
+        // 获取所有数据源 ID
+        List<Long> dataSourceIds = sessionPage.getRecords().stream()
+                .map(ChatSession::getDataSourceId)
+                .distinct()
+                .toList();
+
+        // 批量查询数据源名称
+        Map<Long, String> dataSourceNameMap = dataSourceIds.isEmpty() ? Map.of() :
+                dataSourceMapper.selectBatchIds(dataSourceIds).stream()
+                        .collect(Collectors.toMap(DataSource::getId, DataSource::getConnName));
+
+        // 转换为 VO
+        Page<ChatSessionSearchVO>voPage = new Page<>(sessionPage.getCurrent(), sessionPage.getSize(), sessionPage.getTotal());
+        List<ChatSessionSearchVO> voList = sessionPage.getRecords().stream().map(session -> {
+            ChatSessionSearchVO vo = new ChatSessionSearchVO();
+            vo.setId(session.getId());
+            vo.setDataSourceName(dataSourceNameMap.getOrDefault(session.getDataSourceId(), "未知数据源"));
+            vo.setTitle(session.getTitle());
+            vo.setCreateTime(session.getCreateTime().toString());
+            vo.setMessageCount(messageCountMap.getOrDefault(session.getId(), 0L).intValue());
+            return vo;
+        }).toList();
+        voPage.setRecords(voList);
+
+        return voPage;
     }
 }

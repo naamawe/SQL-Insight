@@ -23,6 +23,9 @@ export const chatApi = {
   batchDeleteSessions: (sessionIds: number[]) =>
     http.delete<void>('/ai/sessions/batch', { data: sessionIds }),
 
+  searchSessions: (keyword: string, current = 1, size = 10) =>
+    http.get<PageResult<ChatSessionSearchVO>>('/ai/sessions/search', { params: { keyword, current, size } }),
+
   getSessionRecords: (sessionId: number) =>
     http.get<ChatRecordVO[]>(`/ai/sessions/${sessionId}/records`),
 

@@ -3,6 +3,7 @@ package com.xhx.core.service.sql;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xhx.dal.entity.ChatSession;
 import com.xhx.core.model.vo.ChatSessionVO;
+import com.xhx.core.model.vo.ChatSessionSearchVO;
 import java.util.List;
 
 /**
@@ -40,4 +41,9 @@ public interface ChatSessionService {
      * 批量删除会话
      */
     void batchDeleteSessions(Long userId, List<Long> sessionIds);
+
+    /**
+     * 搜索会话
+     */
+    Page<ChatSessionSearchVO> searchSessions(Long userId, String keyword, int current, int size);
 }
