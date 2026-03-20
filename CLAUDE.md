@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SQL-Insight is an AI-powered database assistant that enables natural language querying. Users input questions like "query top 10 cities by sales last year", and the system uses LLM to generate and execute SQL automatically. Built with Spring Boot 3.5.x backend and Vue 3 frontend.
+SQL-Insight is an AI-powered database assistant that enables natural language querying. Users input questions like "query top 10 cities by sales last year", and the system uses LLM to generate and execute SQL automatically. Built with Spring Boot 3.5.10 (Java 17) backend and Vue 3 frontend.
 
 ## Commands
 
@@ -48,7 +48,13 @@ npm run preview
 ### Database Setup
 
 1. Initialize the metadata database using [database/schema.sql](database/schema.sql)
-2. Configure API key in `application.yml` (OpenAI/Aliyun DashScope for LLM, Qdrant for vector storage)
+2. Configure API key in `application-local.yml` (OpenAI/Aliyun DashScope for LLM, Qdrant for vector storage)
+
+### Configuration Files
+
+- `application.yml` - Base configuration (port 8080, JWT secret, MyBatis-Plus, default password `default123`)
+- `application-local.yml` - Local development overrides (LLM API keys, Qdrant, Redis) - **active by default**
+- `application-prod.yml` - Production configuration
 
 ## Backend Module Architecture
 
@@ -130,15 +136,12 @@ Key tables and their purposes:
 
 **Language Support**: Backend uses Chinese in code (comments, variable names) and error messages. Frontend is Chinese-first.
 
-**LLM Providers**: Supports OpenAI and Aliyun DashScope via LangChain4j 0.36.2. Configured in `application.yml` and `application-local.yml`.
+**LLM Providers**: Supports OpenAI-compatible APIs and Aliyun DashScope via LangChain4j 0.36.2. Configured in `application-local.yml` under `langchain4j.open-ai` (supports DeepSeek, OpenAI, etc.) or `aliyun.dashscope` for embeddings.
 
-**Vector Store**: Qdrant used for schema embedding storage during schema linking phase.
+**Vector Store**: Qdrant used for schema embedding storage. Configured via `qdrant.host`, `qdrant.port`, `qdrant.collection-name` in `application-local.yml`.
 
-**Password Encryption**: Database passwords in `data_source` table are encrypted using AES-GCM before storage.
+**Password Encryption**: Database passwords in `data_source` table are encrypted using AES-GCM with key configured via `ds.encrypt-key`.
 
-**Configuration Files**:
-- `application.yml` - Base configuration (port 8080, JWT, MyBatis-Plus)
-- `application-local.yml` - Local development overrides (LLM API keys, Qdrant connection)
-- `application-prod.yml` - Production configuration
+**Caching**: Redis used for permission caching. Configured via `spring.data.redis.*` in `application-local.yml`.
 
 **TypeScript Types**: Shared types defined in `frontend/src/types/index.ts`. Auto-imported types from Element Plus and Vue macros are declared in `src/types/auto-imports.d.ts` and `src/types/components.d.ts`.
