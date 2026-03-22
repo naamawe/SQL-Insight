@@ -34,7 +34,7 @@ public class SecurityConstants {
     public static final String DS_TABLES_KEY = "ds:tables:";
 
     /**
-     * schema:{dataSourceId}:{permHash} → String: schema markdown 文本
+     * schema:{dataSourceId}:{permHash} → String: List<TableMetadata> JSON
      * permHash 为有序表名列表（逗号拼接）的 SHA-256 摘要（64位十六进制），
      * 不同权限组合各自独立缓存
      */

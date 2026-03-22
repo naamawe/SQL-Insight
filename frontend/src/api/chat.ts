@@ -1,5 +1,5 @@
 import http from '@/utils/http'
-import type { ChatSession, ChatRecordVO, ChartConfigDTO } from '@/types'
+import type { ChatSession, ChatRecordVO, ChartConfigDTO, ChatSessionSearchVO} from '@/types'
 import type { PageResult } from '@/types'
 
 export interface SqlChatRequest {

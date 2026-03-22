@@ -22,7 +22,7 @@ import java.util.List;
  *   <li>对所有现有数据源全量重建向量索引（处理存量数据 / 重启恢复）</li>
  * </ol>
  *
- * <p><b>Order(20)：</b>在 PermissionCacheWarmUp（默认 Order=0）之后执行，
+ * <p><b>Order(20)：</b>在 PermissionCacheWarmUp（Order=10）之后执行，
  * 避免两个预热任务同时对 DB 和外部服务施加并发压力。
  *
  * <p><b>为什么用同步 rebuildBatch 而不是 rebuildAsync：</b><br>
