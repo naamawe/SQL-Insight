@@ -35,7 +35,8 @@ public class SecurityConstants {
 
     /**
      * schema:{dataSourceId}:{permHash} → String: schema markdown 文本
-     * permHash 由有序表名列表的 hashCode 生成，不同权限组合各自独立缓存
+     * permHash 为有序表名列表（逗号拼接）的 SHA-256 摘要（64位十六进制），
+     * 不同权限组合各自独立缓存
      */
     public static final String SCHEMA_KEY = "schema:";
 

@@ -40,7 +40,7 @@ public class SchemaCollectorServiceImpl implements SchemaCollectorService {
         }
 
         List<String> sortedTables = allowedTables.stream().sorted().toList();
-        String permHash = dsConfig.getId() + ":" + String.join(",", sortedTables);
+        String permHash = sha256(String.join(",", sortedTables));
 
         List<TableMetadata> cached = cacheService.getSchemaMetadata(dsConfig.getId(), permHash);
         if (cached != null) {
@@ -73,5 +73,21 @@ public class SchemaCollectorServiceImpl implements SchemaCollectorService {
                 tables.stream()
                         .map(TableMetadata::toPromptString)
                         .collect(Collectors.joining("\n---\n"));
+    }
+
+    private String sha256(String input) {
+        try {
+            java.security.MessageDigest md =
+                    java.security.MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(
+                    input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 }
