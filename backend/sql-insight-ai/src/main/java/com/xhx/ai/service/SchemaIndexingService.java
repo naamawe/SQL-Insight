@@ -21,7 +21,7 @@ public interface SchemaIndexingService {
     /**
      * 确保 Qdrant Collection 存在（幂等，应用启动时调用一次即可）
      *
-     * @param vectorSize 向量维度，须与 Embedding 模型保持一致（text-embedding-v3 = 1536）
+     * @param vectorSize 向量维度，须与 Embedding 模型保持一致（text-embedding-v3 = 1024）
      * @throws RuntimeException Qdrant 不可达或建库失败时抛出，调用方决定是否继续
      */
     void ensureCollection(int vectorSize);
