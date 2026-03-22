@@ -1,0 +1,49 @@
+# SQL-Insight 本地开发配置示例
+# 复制此文件为 application-local.yml 并填入实际值
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/sql_insight?useSSL=false&serverTimezone=UTC&characterEncoding=utf-8
+    username: root
+    password: your_mysql_password
+
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      timeout: 2000ms
+      password: your_redis_password
+
+# LLM 配置（支持 OpenAI 兼容接口，如 DeepSeek、智谱等）
+langchain4j:
+  open-ai:
+    chat-model:
+      base-url: https://api.deepseek.com          # 或 https://api.openai.com/v1
+      api-key: sk-your-llm-api-key                # 你的 LLM API Key
+      model-name: deepseek-chat                   # 或 gpt-4o、gpt-3.5-turbo 等
+      temperature: 0.0
+    streaming-chat-model:
+      base-url: https://api.deepseek.com
+      api-key: sk-your-llm-api-key
+      model-name: deepseek-chat
+      temperature: 0.0
+      log-requests: true
+      log-responses: true
+
+# 阿里云 DashScope Embedding 配置（用于向量检索）
+aliyun:
+  dashscope:
+    api-key: sk-your-dashscope-api-key           # 阿里云 DashScope API Key
+    model: text-embedding-v3
+
+# Qdrant 向量数据库配置
+qdrant:
+  host: localhost
+  port: 6334
+  collection-name: table_schema
+
+# 数据源密码加密密钥（AES-256-GCM）
+# 生成方式：openssl rand -base64 32
+ds:
+  encrypt-key: "your-32-byte-base64-encrypt-key"
